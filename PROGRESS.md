@@ -22,19 +22,21 @@ Légende : ⬜ non commencé · 🟡 en cours · ✅ terminé et testé · ⛔ b
 | 4 | Journal d'audit à chaîne de hash | ✅ |
 | 5 | Permissions et rôles (matrice pure) | ✅ |
 | 6 | Abstractions IA/OCR et fournisseur simulé | ✅ |
-| 7 | Tranche verticale de bout en bout | ⬜ |
+| 6bis | Pipeline de correction (logique métier) | ✅ |
+| 7 | Tranche verticale de bout en bout (interface) | ⬜ |
 | 8+ | Approfondissement des phases | ⬜ |
 
-**Tests exécutés à ce jour : 210, tous verts.** Dernière exécution : 2026-07-31.
+**Tests exécutés à ce jour : 222, tous verts.** Dernière exécution : 2026-07-31.
 
 ```
-Unitaires — 198, sans aucune infrastructure
+Unitaires — 210, sans aucune infrastructure
   @coteris/shared    62  (millipoints 30, confiance 15, configuration 17)
   @coteris/grading   40  (moteur de barème)
   @coteris/database   9  (invariants de schéma)
   @coteris/audit     16  (chaîne de hash)
   @coteris/auth      29  (matrice de permissions)
   @coteris/ai        42  (validation des sorties, coûts, fournisseur simulé)
+  @coteris/pipeline  12  (chaîne complète OCR → analyse → points → confiance)
 
 Intégration — 12, contre PostgreSQL 17 réel
   @coteris/audit     12  (verrous, détection d'altération, transactions)
@@ -360,6 +362,63 @@ accents compris.
 - Le laboratoire de banc d'essai (`docs/benchmark-protocol.md`,
   `scripts/run-benchmark.ts`) n'est pas encore écrit.
 - Aucun fournisseur réel n'est implémenté.
+
+---
+
+### Étape 6bis — Pipeline de correction — ✅
+
+C'est la pièce qui relie tout. Les briques existaient ; celle-ci les fait
+fonctionner ensemble, et un test prouve la chaîne complète sur le scénario du
+cahier des charges.
+
+**Les sept étapes de la section 19, implémentées et tracées**
+
+```
+preparation → readability → analysis → scoring → confidence → second_pass
+```
+
+Chaque étape produit une trace lisible. Le pipeline est **pur** : ni base, ni
+réseau. Les entrées sont des paramètres, la sortie une structure de données —
+donc testable à l'identique, indéfiniment.
+
+**Ce que le test de bout en bout prouve**
+
+Réponse « Il faut donner de l'iode non radioactif pour protéger la thyroïde avant
+l'injection », barème à trois critères → **0,5 point sur 1**, avec les extraits
+« iode non radioactif » et « protéger la thyroïde » tirés de la copie, le critère
+sur la captation classé absent, un niveau de confiance vert, et aucune seconde
+analyse payante déclenchée.
+
+**Trois refus assumés**
+
+1. **Aucune correction sans barème verrouillé** — `RubricNotLockedError`, testé.
+2. **On n'invente jamais.** Copie blanche ou confiance OCR sous le seuil :
+   l'analyse n'est même pas lancée. Économie réelle, et surtout aucune proposition
+   appuyée sur du texte illisible.
+3. **Preuves rejetées, points refusés.** Si les extraits cités ne figurent pas dans
+   la copie, ou si un critère sort du barème, la proposition entière est écartée et
+   le cas part en validation humaine.
+
+**Une décision corrigée par un test rouge**
+
+J'avais implémenté « note proche d'un seuil important » au niveau de la question :
+une note à 0,5/1 déclenchait une seconde analyse. C'est faux. Une question notée à
+la moitié n'est proche d'aucun seuil signifiant — les seuils qui comptent, moyenne
+et barre d'admission, portent sur la copie entière. La règle envoyait en seconde
+analyse payante une grande partie de l'épreuve. Elle a été retirée du pipeline et
+confiée à l'orchestrateur, qui voit le total.
+
+De même, l'échantillonnage aléatoire de cas verts ne se décide pas ici : ce module
+doit rester déterministe. L'appelant le demande via `forceSecondPass`.
+
+**Tests exécutés** : 12, tous verts.
+
+**Limites connues**
+
+- Le pipeline n'est appelé par rien : ni worker, ni interface. Il n'écrit pas encore
+  en base et ne produit pas d'événement d'audit.
+- La seconde vérification est signalée mais pas exécutée : il n'y a qu'un
+  fournisseur, et il est simulé.
 
 ---
 

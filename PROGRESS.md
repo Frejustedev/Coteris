@@ -29,10 +29,11 @@ Légende : ⬜ non commencé · 🟡 en cours · ✅ terminé et testé · ⛔ b
 | 9 | Stockage des fichiers | ✅ |
 | 10 | Worker et file de travaux | ✅ |
 | 11 | Exports CSV et rapport d'audit | ✅ |
-| 12 | Import de copies, banc d'essai, PDF corrigé | ⬜ |
+| 12 | Import de copies | ✅ |
+| 13 | Segmentation réelle, banc d'essai, PDF corrigé | ⬜ |
 | 8+ | Approfondissement des phases | ⬜ |
 
-**Tests exécutés à ce jour : 362, tous verts.** Dernière exécution : 2026-08-01.
+**Tests exécutés à ce jour : 383, tous verts.** Dernière exécution : 2026-08-01.
 
 ```
 Unitaires — 278, sans aucune infrastructure
@@ -50,11 +51,12 @@ Unitaires — 278, sans aucune infrastructure
 Intégration — 12, contre PostgreSQL 17 réel
   @coteris/audit     12  (verrous, détection d'altération, transactions)
 
-Bout en bout — 72, contre l'application, la base, le worker et le stockage réels
+Bout en bout — 93, contre l'application, la base, le worker et le stockage réels
   pnpm smoke          28  (parcours utilisateur, sécurité du service de fichiers)
   pnpm verify:review  15  (validation humaine, audit, recalcul)
   pnpm verify:worker  12  (file transactionnelle, traitement, audit)
   pnpm verify:exports 17  (permissions, contenu, format, traçabilité)
+  pnpm verify:import  21  (refus, stockage, zones, file, traitement, doublon)
 ```
 
 ---
@@ -828,6 +830,57 @@ Remplacé par une garde équivalente qui fonctionne partout.
 - Pas de PDF corrigé.
 - Aucun bouton d'import de copies : le stockage est prêt, l'écriture ne vient
   encore que des exports.
+
+---
+
+### Étape 12 — Import de copies — ✅
+
+**La chaîne complète fonctionne désormais depuis l'interface** : importer une
+copie → fichier écrit dans le stockage → zones créées → analyses mises en file →
+worker → propositions avec preuves → validation humaine → export.
+
+**Ce que l'import refuse, et pourquoi**
+
+| Situation | Comportement |
+|---|---|
+| Rôle sans `submission.create` | Refusé |
+| Fichier vide | Refusé |
+| **Fichier déguisé** (script renommé `.png`) | Refusé **sur ses octets**, jamais sur son extension ni sur le type déclaré |
+| Fichier au-delà de la limite | Refusé |
+| PDF | **Refusé explicitement** : le découpage en pages n'est pas implémenté, et le dire vaut mieux que laisser l'enseignant attendre |
+| Barème non verrouillé | Refusé à l'entrée, plutôt qu'une file de travaux qui échouerait un à un |
+
+**Le doublon n'est pas une erreur**
+
+Un ré-import du même fichier renvoie vers la copie existante, avec son code
+anonyme, sans en créer une seconde. Un enseignant qui reclique après un délai
+réseau ne doit pas se retrouver avec des doublons à démêler avant un jury.
+
+**Une limite que je nomme au lieu de la masquer**
+
+La segmentation est une **hypothèse de mise en page** — une zone de réponse par
+question, dans l'ordre, réparties sur la hauteur — et **non une détection**. Elle
+est vraie pour beaucoup de sujets à réponses courtes, fausse pour les autres.
+
+Conséquences assumées : les zones portent une confiance de 0,3, la copie est
+classée « vérification recommandée », et l'interface l'écrit noir sur blanc. La
+détection réelle et la correction manuelle des zones restent à implémenter.
+
+**Tout dans une transaction**
+
+La copie, ses pages, ses zones, les jobs d'analyse et l'événement d'audit sont
+validés ensemble. Une copie importée dont l'analyse ne serait jamais mise en file
+resterait éternellement « en attente », sans que l'enseignant comprenne pourquoi.
+
+**Tests** : 21 vérifications contre la base, le stockage et le worker réels.
+
+**Limites connues**
+
+- Images seulement (JPEG, PNG, WEBP). Pas de PDF.
+- Une image = une page = une copie. Pas d'import multipage.
+- Segmentation par hypothèse, pas par détection.
+- Pas de contrôle qualité réel des scans : flou, page sombre et rotation ne sont
+  pas détectés.
 
 ---
 

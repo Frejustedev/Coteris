@@ -14,6 +14,7 @@ import {
 } from '~/lib/repositories'
 import { requireUser } from '~/lib/session'
 import { PanneauExports } from './exports'
+import { PanneauImport } from './import'
 
 export const metadata: Metadata = { title: 'Épreuve' }
 
@@ -131,6 +132,13 @@ export default async function ÉpreuvePage({ params }: { params: Promise<{ id: s
             </table>
           </div>
         )}
+      </Carte>
+
+      <Carte titre="Importer des copies">
+        <PanneauImport
+          assessmentId={id}
+          peutImporter={can(principal, 'submission', 'create')}
+        />
       </Carte>
 
       <Carte titre="Exports">

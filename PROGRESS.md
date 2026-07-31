@@ -20,19 +20,21 @@ Légende : ⬜ non commencé · 🟡 en cours · ✅ terminé et testé · ⛔ b
 | 2 | Modèle de données et migrations | ✅ |
 | 3 | Moteur de barème déterministe | ✅ |
 | 4 | Journal d'audit à chaîne de hash | ✅ |
-| 5 | Authentification, organisations, rôles | ⬜ |
-| 6 | Abstractions IA/OCR et benchmark | ⬜ |
+| 5 | Permissions et rôles (matrice pure) | ✅ |
+| 6 | Abstractions IA/OCR et fournisseur simulé | ✅ |
 | 7 | Tranche verticale de bout en bout | ⬜ |
 | 8+ | Approfondissement des phases | ⬜ |
 
-**Tests exécutés à ce jour : 139, tous verts.** Dernière exécution : 2026-07-31.
+**Tests exécutés à ce jour : 210, tous verts.** Dernière exécution : 2026-07-31.
 
 ```
-Unitaires — 127, sans aucune infrastructure
-  @coteris/shared    62  (millipoints 30, confidence 15, env 17)
+Unitaires — 198, sans aucune infrastructure
+  @coteris/shared    62  (millipoints 30, confiance 15, configuration 17)
   @coteris/grading   40  (moteur de barème)
   @coteris/database   9  (invariants de schéma)
   @coteris/audit     16  (chaîne de hash)
+  @coteris/auth      29  (matrice de permissions)
+  @coteris/ai        42  (validation des sorties, coûts, fournisseur simulé)
 
 Intégration — 12, contre PostgreSQL 17 réel
   @coteris/audit     12  (verrous, détection d'altération, transactions)
@@ -282,6 +284,82 @@ hash adresse réellement.
   `docs/audit-trail.md` ; aucune promesse de type « blockchain » n'est faite.
 - Le service applicatif qui appellera `appendAuditEvent` pour chaque action métier
   n'existe pas encore : la brique est prête, elle n'est câblée à rien.
+
+---
+
+### Étape 5 — Permissions et rôles — ✅ (partielle)
+
+**Réalisé**
+
+- Catalogue fermé de 13 ressources et de leurs actions, dans un module **pur** :
+  la matrice complète des rôles tient dans un écran et se teste en mémoire.
+- Trois rôles, définis par ce qu'ils **ne peuvent pas** faire autant que par ce
+  qu'ils peuvent.
+- `assertSameOrganization` : première défense contre les fuites entre
+  établissements.
+- `ForbiddenError` ne révèle jamais l'existence de la ressource visée — « vous
+  n'avez pas accès à l'épreuve X » confirmerait que X existe.
+
+**La contrainte du cahier des charges, rendue exécutable**
+
+L'administrateur technique n'a **pas** `submissionContent: ['read']`. Ce n'est pas
+un oubli : c'est l'exigence « il ne doit pas accéder au contenu des copies »
+traduite en code et couverte par un test. Un modèle hiérarchique
+(admin > coordonnateur > correcteur) rendait cette contrainte inexprimable, puisque
+l'admin y hériterait de tout.
+
+**Tests exécutés** : 29, tous verts. Ils portent principalement sur les refus —
+correcteur qui ne peut pas verrouiller un barème, ni finaliser, ni lever
+l'anonymat ; admin technique qui ne voit pas les copies ; coordonnateur de A sans
+aucun droit sur B.
+
+**Ce qui reste** : le câblage à Better Auth (sessions, inscription, invitations,
+vérification d'adresse) se fera avec l'application Next.js, à l'étape suivante. La
+matrice de permissions, elle, est prête et testée.
+
+---
+
+### Étape 6 — Abstractions IA et fournisseur simulé — ✅
+
+**Réalisé**
+
+- Interfaces `OcrProvider`, `TextAnalysisProvider`, `VisionAnalysisProvider`,
+  `EmbeddingProvider`. Le métier ne dépend d'aucun fournisseur concret.
+- Schéma Zod strict de la sortie d'analyse, correspondant au JSON de la section 19.
+- **`validateEvidence`** : vérifie que chaque extrait cité figure littéralement
+  dans la transcription. C'est la barrière contre la preuve inventée — le mode
+  d'erreur le plus dangereux du produit, parce qu'une citation fabriquée est
+  indiscernable d'une vraie à l'œil nu. Les pénalités sont vérifiées au même titre
+  que les points : une sanction sans preuve est aussi contestable qu'un point non
+  justifié.
+- **`validateCriteriaScope`** : refuse un critère inventé par le modèle, un critère
+  classé deux fois, ou une analyse incomplète — un critère oublié serait
+  silencieusement noté zéro.
+- Coûts en **millionièmes d'euro** (entiers), coupe-circuit vérifié **avant**
+  l'appel. `computeCost` lève si le tarif est inconnu plutôt que de compter zéro :
+  un modèle de coût faux produirait un prix de vente faux.
+- Fournisseurs simulés déterministes, sans réseau ni dépense, couvrant le scénario
+  iode stable / MIBG.
+
+**Un bug trouvé et corrigé**
+
+La normalisation `NFD` décompose « é » en deux caractères ; retirer ensuite les
+diacritiques change la longueur de la chaîne. Les extraits retournés auraient été
+**décalés de quelques caractères, silencieusement** — donc faux, tout en paraissant
+plausibles. Corrigé par une table de correspondance entre positions normalisées et
+positions d'origine. Un test vérifie que « protéger la thyroïde » revient intact,
+accents compris.
+
+**Tests exécutés** : 42, tous verts.
+
+**Limites connues**
+
+- `PRICING` ne contient que le fournisseur simulé, à zéro. **Aucun tarif réel n'est
+  inventé** : ils seront ajoutés depuis les grilles publiées au moment d'intégrer
+  un fournisseur.
+- Le laboratoire de banc d'essai (`docs/benchmark-protocol.md`,
+  `scripts/run-benchmark.ts`) n'est pas encore écrit.
+- Aucun fournisseur réel n'est implémenté.
 
 ---
 

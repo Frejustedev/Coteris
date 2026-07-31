@@ -1,0 +1,43 @@
+{
+  "name": "coteris",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Plateforme de correction académique assistée par intelligence artificielle",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@11.18.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:integration": "turbo run test:integration",
+    "test:e2e": "playwright test",
+    "db:generate": "pnpm --filter @coteris/database generate",
+    "db:migrate": "pnpm --filter @coteris/database migrate",
+    "db:seed": "pnpm --filter @coteris/database seed",
+    "db:reset": "pnpm --filter @coteris/database reset",
+    "audit:verify": "pnpm --filter @coteris/audit verify",
+    "benchmark": "tsx scripts/run-benchmark.ts",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
+    "clean": "turbo run clean && rimraf node_modules"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^22.10.2",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.31.0",
+    "prettier": "^3.4.2",
+    "rimraf": "^6.0.1",
+    "tsx": "^4.19.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.19.0",
+    "vitest": "^2.1.8"
+  }
+}

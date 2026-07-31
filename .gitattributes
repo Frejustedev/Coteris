@@ -1,0 +1,27 @@
+# Fins de ligne normalisées en LF dans le dépôt.
+#
+# Le développement se fait sous Windows, le déploiement sous Linux. Un script
+# shell commité en CRLF échoue à l'exécution sur le serveur avec un message
+# incompréhensible (`bad interpreter: /bin/sh^M`). On normalise donc à la source.
+* text=auto eol=lf
+
+# Fichiers devant impérativement rester en LF, quelle que soit la plateforme.
+*.sh          text eol=lf
+*.bash        text eol=lf
+Dockerfile    text eol=lf
+*.yml         text eol=lf
+*.yaml        text eol=lf
+
+# Fichiers binaires : aucune conversion.
+*.png         binary
+*.jpg         binary
+*.jpeg        binary
+*.webp        binary
+*.pdf         binary
+*.ico         binary
+*.woff        binary
+*.woff2       binary
+
+# Fichiers générés : masqués dans les diffs de revue.
+pnpm-lock.yaml           linguist-generated=true -diff
+packages/database/drizzle/**/*.sql  linguist-generated=false

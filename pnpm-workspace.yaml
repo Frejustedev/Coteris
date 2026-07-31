@@ -1,0 +1,9 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# esbuild télécharge son binaire natif via un script d'installation.
+# Vitest et Next.js en dépendent. Aucun autre paquet n'est autorisé à exécuter
+# de script d'installation.
+allowBuilds:
+  esbuild: true

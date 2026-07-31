@@ -1,0 +1,53 @@
+# Dépendances
+node_modules/
+.pnpm-store/
+
+# Build
+dist/
+build/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+
+# Environnement — JAMAIS commité
+.env
+.env.*
+!.env.example
+
+# Tests
+coverage/
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
+# Données locales
+.data/
+storage/
+uploads/
+tmp/
+
+# Données de banc d'essai — contiennent potentiellement des copies réelles.
+# Ne doit jamais entrer dans le dépôt. Voir docs/benchmark-protocol.md.
+benchmark/data/
+benchmark/results/
+!benchmark/data/.gitkeep
+!benchmark/fixtures-synthetiques/
+
+# Journaux
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Système
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Éditeurs
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.recommended.json
+.idea/
+*.swp

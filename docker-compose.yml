@@ -1,0 +1,57 @@
+# Environnement de développement local.
+#
+# Coteris ne dépend PAS de Redis (voir docs/adr/0003-file-attente-postgres.md) :
+# la file de travaux vit dans PostgreSQL. Deux services suffisent donc.
+#
+# La production sur hébergement mutualisé n'utilise pas Docker
+# (voir docs/adr/0005-deploiement-portable.md). La version majeure de PostgreSQL
+# doit rester alignée entre ce fichier, la CI et la production.
+
+name: coteris
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: coteris-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: coteris
+      POSTGRES_PASSWORD: coteris
+      POSTGRES_DB: coteris
+      # Collation déterministe : les tris et comparaisons de chaînes doivent
+      # produire le même résultat en développement, en CI et en production.
+      POSTGRES_INITDB_ARGS: '--locale-provider=icu --icu-locale=fr-FR --encoding=UTF8'
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U coteris -d coteris']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Stockage objet compatible S3, pour développer et tester le pilote `s3`.
+  # Le pilote `local` (défaut) n'en a pas besoin.
+  minio:
+    image: minio/minio:latest
+    container_name: coteris-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: coteris
+      MINIO_ROOT_PASSWORD: coteris-dev-secret
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-data:
+  minio-data:

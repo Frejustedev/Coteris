@@ -123,7 +123,8 @@ export default tseslint.config(
       '**/src/cli/**/*.ts',
       'packages/seed/**/*.ts',
       'scripts/**/*.ts',
-      'apps/worker/src/main.ts',
+      // Le worker n'a pas d'interface : sa sortie console EST son journal.
+      'apps/worker/**/*.ts',
     ],
     rules: {
       'no-console': 'off',

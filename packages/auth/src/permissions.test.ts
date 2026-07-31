@@ -83,6 +83,12 @@ describe('correcteur — ce qu’il ne peut pas faire', () => {
     expect(can(correcteur, 'grading', 'publish')).toBe(false)
   })
 
+  it('peut en revanche demander une nouvelle analyse', () => {
+    // Proposer n'est pas décider : le cahier des charges prévoit qu'un
+    // correcteur relance une analyse après avoir corrigé une transcription.
+    expect(can(correcteur, 'grading', 'propose')).toBe(true)
+  })
+
   it('ne lève jamais l’anonymat', () => {
     expect(can(correcteur, 'identity', 'reveal')).toBe(false)
   })

@@ -17,6 +17,7 @@
     "@coteris/auth": "workspace:*",
     "@coteris/database": "workspace:*",
     "@coteris/grading": "workspace:*",
+    "@coteris/jobs": "workspace:*",
     "@coteris/pipeline": "workspace:*",
     "@coteris/shared": "workspace:*",
     "@coteris/storage": "workspace:*",

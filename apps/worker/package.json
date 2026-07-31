@@ -1,0 +1,32 @@
+{
+  "name": "@coteris/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "build": "tsc --noEmit",
+    "clean": "rimraf dist .turbo *.tsbuildinfo",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
+    "once": "tsx src/main.ts --once"
+  },
+  "dependencies": {
+    "@coteris/ai": "workspace:*",
+    "@coteris/audit": "workspace:*",
+    "@coteris/database": "workspace:*",
+    "@coteris/grading": "workspace:*",
+    "@coteris/jobs": "workspace:*",
+    "@coteris/pipeline": "workspace:*",
+    "@coteris/shared": "workspace:*",
+    "@coteris/storage": "workspace:*",
+    "drizzle-orm": "^0.38.3",
+    "graphile-worker": "^0.16.6",
+    "postgres": "^3.4.5"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

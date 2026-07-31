@@ -27,28 +27,31 @@ Légende : ⬜ non commencé · 🟡 en cours · ✅ terminé et testé · ⛔ b
 | 7 | Interface web — lecture et correction | ✅ |
 | 8 | Validation humaine — actions câblées | ✅ |
 | 9 | Stockage des fichiers | ✅ |
-| 10 | Worker, imports, exports | ⬜ |
+| 10 | Worker et file de travaux | ✅ |
+| 11 | Imports de copies, exports, banc d'essai | ⬜ |
 | 8+ | Approfondissement des phases | ⬜ |
 
-**Tests exécutés à ce jour : 292, tous verts.** Dernière exécution : 2026-07-31.
+**Tests exécutés à ce jour : 317, tous verts.** Dernière exécution : 2026-08-01.
 
 ```
-Unitaires — 237, sans aucune infrastructure
+Unitaires — 250, sans aucune infrastructure
   @coteris/shared    62  (millipoints 30, confiance 15, configuration 17)
   @coteris/grading   40  (moteur de barème)
   @coteris/database   9  (invariants de schéma)
   @coteris/audit     16  (chaîne de hash)
-  @coteris/auth      29  (matrice de permissions)
+  @coteris/auth      30  (matrice de permissions)
   @coteris/ai        42  (validation des sorties, coûts, fournisseur simulé)
   @coteris/pipeline  12  (chaîne complète OCR → analyse → points → confiance)
   @coteris/storage   27  (clés, types réels, jetons d'accès)
+  @coteris/jobs      12  (charges utiles, politiques de reprise, mise en file)
 
 Intégration — 12, contre PostgreSQL 17 réel
   @coteris/audit     12  (verrous, détection d'altération, transactions)
 
-Bout en bout — 43, contre l'application et la base réelles
+Bout en bout — 55, contre l'application, la base et le worker réels
   pnpm smoke         28  (parcours utilisateur, sécurité du service de fichiers)
   pnpm verify:review 15  (validation humaine, audit, recalcul)
+  pnpm verify:worker 12  (file transactionnelle, traitement, audit)
 ```
 
 ---
@@ -696,6 +699,70 @@ distinguer un jeton expiré d'un jeton forgé.
   une illustration trompeuse. Les images apparaîtront dès l'implémentation de
   l'import.
 - Rien n'écrit encore dans le stockage : l'import de copies reste à faire.
+
+---
+
+### Étape 10 — Worker et file de travaux — ✅
+
+**La propriété centrale de l'ADR 0003 est maintenant prouvée, pas seulement
+argumentée.**
+
+`pnpm verify:worker` met un job en file dans une transaction **qu'il annule
+volontairement**, et vérifie qu'aucun job ne subsiste. C'est exactement ce
+qu'une file externe ne peut pas garantir : avec Redis, la copie existerait en
+base sans jamais être traitée, ou le job partirait pour une copie annulée.
+
+**Ce qui a été construit**
+
+| Élément | Contenu |
+|---|---|
+| `packages/jobs` | Catalogue des tâches, schémas de charge utile, politiques de reprise, `addJob` transactionnel |
+| `apps/worker` | Processus autonome, pool de connexions **distinct** de celui du web |
+| `analyser-reponse` | Lecture, analyse selon le barème verrouillé, écriture de la proposition et de son audit |
+| `scripts/worker-watchdog.sh` | Surveillance par cron pour hébergement mutualisé |
+| `docs/deployment.md` | Déploiement sur les trois cibles |
+
+**Décisions notables**
+
+- **`addJob` exige une transaction.** Aucune variante ne s'en passe.
+- **Clé d'unicité** sur la ré-analyse : un correcteur qui clique deux fois ne
+  déclenche pas deux appels d'IA facturés. Vérifié par un test.
+- **Le worker préfère toujours une transcription existante à une nouvelle
+  lecture.** Si un correcteur l'a corrigée à la main, relancer l'OCR effacerait
+  son travail — et c'est précisément après une telle correction qu'on relance
+  l'analyse.
+- **Le worker n'écrit jamais `points_awarded`.** Il propose ; seul un humain
+  attribue. Vérifié par un test.
+- **Un critère resté en brouillon n'entre jamais dans une correction** : la
+  requête filtre sur `validation_status`.
+- Le contexte du worker **refuse de démarrer** avec un fournisseur d'IA autre que
+  simulé, tant que le banc d'essai n'a pas tranché. Choisir avant de mesurer
+  serait exactement ce que le cahier des charges interdit.
+
+**Une conséquence qu'il a fallu traiter**
+
+Une réponse peut désormais compter plusieurs analyses. L'écran de correction
+affichait chaque question autant de fois qu'elle avait été analysée ; la requête
+ne retient plus que la dernière, les précédentes restant en base pour comparaison.
+
+**Un correctif de permission**
+
+Le correcteur a reçu `grading.propose`. Le cahier des charges prévoit qu'il puisse
+« demander une nouvelle analyse », typiquement après avoir corrigé une
+transcription. Proposer n'est pas décider — il n'a toujours ni `finalize`, ni
+`publish`.
+
+**Tests** : 12 unitaires sur `@coteris/jobs`, 12 vérifications de bout en bout
+contre la base et le worker réels.
+
+**Limites connues**
+
+- Une seule tâche est implémentée. Contrôle qualité, seconde vérification,
+  recorrection et exports sont déclarés au catalogue mais sans exécutant.
+- Aucun bouton dans l'interface ne déclenche encore de ré-analyse : le service
+  existe, l'écran ne l'appelle pas.
+- Le maintien d'un worker permanent sur mutualisé reste à valider auprès du
+  support d'o2switch. La variante `once` par cron, documentée, s'en passe.
 
 ---
 

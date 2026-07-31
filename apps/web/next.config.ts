@@ -16,6 +16,7 @@ const config: NextConfig = {
     '@coteris/grading',
     '@coteris/pipeline',
     '@coteris/storage',
+    '@coteris/jobs',
   ],
 
   typescript: {

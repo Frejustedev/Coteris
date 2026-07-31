@@ -237,8 +237,16 @@ export async function getSubmissionReview(
       ON tv.answer_region_id = ar.id AND tv.is_current = true
     LEFT JOIN ocr_runs orun
       ON orun.id = tv.ocr_run_id
-    LEFT JOIN grading_runs r
-      ON r.question_id = q.id AND r.submission_id = ${submissionId}::uuid
+    -- La dernière analyse seulement. Une réponse peut en compter plusieurs :
+    -- corriger une transcription en déclenche une nouvelle, et les anciennes
+    -- restent consultables. Sans ce LATERAL, chaque question apparaîtrait
+    -- autant de fois qu'elle a été analysée.
+    LEFT JOIN LATERAL (
+      SELECT * FROM grading_runs gr
+      WHERE gr.question_id = q.id AND gr.submission_id = ${submissionId}::uuid
+      ORDER BY gr.created_at DESC
+      LIMIT 1
+    ) r ON true
     LEFT JOIN LATERAL (
       SELECT string_agg(content, ' · ' ORDER BY sort_order) AS content
       FROM answer_key_elements e
@@ -276,6 +284,12 @@ export async function getSubmissionReview(
     JOIN rubric_criteria rc ON rc.id = d.rubric_criterion_id
     WHERE d.submission_id = ${submissionId}::uuid
       AND d.organization_id = ${organizationId}::uuid
+      -- Seules les décisions de la dernière analyse de chaque question.
+      AND d.grading_run_id = (
+        SELECT gr.id FROM grading_runs gr
+        WHERE gr.question_id = d.question_id AND gr.submission_id = d.submission_id
+        ORDER BY gr.created_at DESC LIMIT 1
+      )
     ORDER BY rc.sort_order
   `)) as unknown as Record<string, unknown>[]
 

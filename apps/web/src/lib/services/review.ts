@@ -15,6 +15,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import { AUDIT_ACTIONS } from '@coteris/database'
 import { ForbiddenError, authorize, type Principal } from '@coteris/auth'
 import { appendAuditEvent, type AuditTransaction } from '@coteris/audit'
+import { TASKS, addJob, type JobTransaction } from '@coteris/jobs'
 
 import { db, schema } from '../db'
 
@@ -306,6 +307,90 @@ export async function validerQuestionEnLot(
 
   await recalculerNotes(principal.organizationId, entrée.submissionId)
   return { ok: true }
+}
+
+export interface EntréeRéanalyse {
+  readonly submissionId: string
+  readonly questionId: string
+  readonly requestId?: string | null | undefined
+  readonly now: Date
+  readonly auditSecret: string
+}
+
+/**
+ * Demande une nouvelle analyse d'une réponse.
+ *
+ * La mise en file et l'événement d'audit partagent la transaction : soit le job
+ * et sa trace existent tous les deux, soit aucun. C'est toute la raison d'être
+ * d'une file dans PostgreSQL (ADR 0003).
+ *
+ * La clé d'unicité empêche qu'un correcteur qui clique deux fois déclenche deux
+ * analyses — donc deux appels d'IA facturés.
+ */
+export async function demanderRéanalyse(
+  principal: Principal,
+  userId: string,
+  entrée: EntréeRéanalyse,
+): Promise<RésultatRevue> {
+  try {
+    authorize(principal, 'grading', 'propose')
+  } catch (error) {
+    if (error instanceof ForbiddenError) {
+      return { ok: false, message: 'Votre rôle ne permet pas de relancer une analyse.' }
+    }
+    throw error
+  }
+
+  const [region] = await db
+    .select({ id: schema.answerRegions.id })
+    .from(schema.answerRegions)
+    .where(
+      and(
+        eq(schema.answerRegions.submissionId, entrée.submissionId),
+        eq(schema.answerRegions.questionId, entrée.questionId),
+        eq(schema.answerRegions.organizationId, principal.organizationId),
+      ),
+    )
+    .limit(1)
+
+  if (!region) {
+    return { ok: false, message: 'Aucune zone de réponse n’est associée à cette question.' }
+  }
+
+  await db.transaction(async (tx) => {
+    await addJob(
+      tx as unknown as JobTransaction,
+      TASKS.ANALYZE_REGION,
+      {
+        organizationId: principal.organizationId,
+        submissionId: entrée.submissionId,
+        answerRegionId: region.id,
+        questionId: entrée.questionId,
+        forceSecondPass: false,
+        requestedBy: userId,
+      },
+      { jobKey: `analyse:${region.id}` },
+    )
+
+    await appendAuditEvent(
+      tx as unknown as AuditTransaction,
+      {
+        organizationId: principal.organizationId,
+        actorId: userId,
+        actorRole: principal.roles[0] ?? null,
+        action: AUDIT_ACTIONS.GRADE_PROPOSE,
+        objectType: 'answer_region',
+        objectId: region.id,
+        newValue: { demande: 'reanalyse' },
+        reason: 'Nouvelle analyse demandée par un correcteur',
+        requestId: entrée.requestId ?? null,
+        occurredAt: entrée.now,
+      },
+      entrée.auditSecret,
+    )
+  })
+
+  return { ok: true, message: 'Analyse demandée. Le résultat apparaîtra une fois traité.' }
 }
 
 /**

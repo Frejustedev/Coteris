@@ -75,6 +75,10 @@ const coordinator: Permissions = {
  * `submission: ['read']` autorise la lecture *en principe*. La restriction aux
  * copies qui lui sont **attribuées** relève du périmètre des données, pas des
  * permissions, et est appliquée dans la couche de dépôt.
+ *
+ * `grading: ['propose']` lui est en revanche accordé : le cahier des charges
+ * prévoit qu'un correcteur puisse « demander une nouvelle analyse », typiquement
+ * après avoir corrigé une transcription. Proposer n'est pas décider.
  */
 const grader: Permissions = {
   organization: ['read'],
@@ -84,7 +88,7 @@ const grader: Permissions = {
   rubric: ['read'],
   submission: ['read'],
   submissionContent: ['read'],
-  grading: ['read', 'review'],
+  grading: ['read', 'propose', 'review'],
   export: ['read'],
 }
 

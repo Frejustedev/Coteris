@@ -120,7 +120,8 @@ export default tseslint.config(
     files: [
       '**/src/migrate.ts',
       '**/src/reset.ts',
-      '**/src/seed/**/*.ts',
+      '**/src/cli/**/*.ts',
+      'packages/seed/**/*.ts',
       'scripts/**/*.ts',
       'apps/worker/src/main.ts',
     ],

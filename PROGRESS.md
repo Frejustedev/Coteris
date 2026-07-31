@@ -23,7 +23,8 @@ Légende : ⬜ non commencé · 🟡 en cours · ✅ terminé et testé · ⛔ b
 | 5 | Permissions et rôles (matrice pure) | ✅ |
 | 6 | Abstractions IA/OCR et fournisseur simulé | ✅ |
 | 6bis | Pipeline de correction (logique métier) | ✅ |
-| 7 | Tranche verticale de bout en bout (interface) | ⬜ |
+| 6ter | Données de démonstration réelles | ✅ |
+| 7 | Interface web et worker | ⬜ |
 | 8+ | Approfondissement des phases | ⬜ |
 
 **Tests exécutés à ce jour : 222, tous verts.** Dernière exécution : 2026-07-31.
@@ -419,6 +420,71 @@ doit rester déterministe. L'appelant le demande via `forceSecondPass`.
   en base et ne produit pas d'événement d'audit.
 - La seconde vérification est signalée mais pas exécutée : il n'y a qu'un
   fournisseur, et il est simulé.
+
+---
+
+### Étape 6ter — Données de démonstration — ✅
+
+**Le seed ne fabrique pas ses résultats : il exécute le pipeline.**
+
+C'est le point important. Un jeu de démonstration écrit à la main donnerait une
+image flatteuse et fausse. Celui-ci fait réellement tourner l'OCR simulé puis le
+pipeline de correction sur six copies, et enregistre ce qui en sort. Il échouerait
+si la chaîne était cassée.
+
+**Contenu**, entièrement fictif (aucune donnée personnelle réelle) :
+
+- une faculté de médecine, un coordonnateur, deux correcteurs, dix étudiants ;
+- une épreuve de médecine nucléaire à cinq questions courtes, 5 points ;
+- un corrigé validé, un barème de 12 critères **verrouillé** avant tout import ;
+- six copies produisant des cas verts, orange et rouges, une réponse correcte non
+  prévue au corrigé, et une copie partiellement blanche.
+
+**Sortie réelle de l'exécution**
+
+```
+ANON-001 — 4.70 / 5   cas vert, réponses nettes
+ANON-002 — 2.20 / 5   le cas du cahier des charges : 2 critères sur 3 en question 1
+ANON-003 — 3.90 / 5   cas orange, lecture douteuse
+ANON-004 — 0.00 / 5   cas rouge, scan inexploitable — aucune proposition
+ANON-005 — 4.75 / 5   réponse correcte non prévue au corrigé
+ANON-006 — 0.65 / 5   copie partiellement blanche
+
+Décisions : 16 vertes, 4 orange, 10 rouges
+
+copies 6 · analyses 30 · décisions 72 · preuves 55 · validations 39 · audit 49
+```
+
+`ANON-004` mérite un mot : la confiance OCR simulée est de 31 %, sous le seuil.
+L'analyse n'est **même pas lancée** — le système ne propose rien plutôt que
+d'inventer, et ne paie pas pour analyser de l'illisible.
+
+**Vérification de la chaîne d'audit**
+
+```
+$ pnpm audit:verify
+  OK      Faculté de médecine de démonstration — 49 événement(s), chaîne intacte
+```
+
+Les 49 événements produits par le seed forment une chaîne vérifiable. La commande
+sort en code 1 si une chaîne est rompue, pour être utilisable dans un contrôle de
+conformité planifié.
+
+**Fichiers importants**
+
+| Fichier | Contenu |
+|---|---|
+| `packages/seed/src/fixtures.ts` | Épreuve, barème, copies simulées |
+| `packages/seed/src/run.ts` | Chargement, exécution réelle du pipeline |
+| `packages/audit/src/cli/verify.ts` | Commande de vérification d'intégrité |
+
+**Limites connues**
+
+- Les comptes de démonstration existent mais **n'ont pas de mot de passe** : la
+  gestion des identifiants revient à Better Auth, qui sera câblé avec l'application.
+  Inventer ici un format de hachage risquerait de ne pas correspondre.
+- Les images de copies sont référencées par clé mais n'existent pas sur le disque :
+  il n'y a pas encore de couche de stockage.
 
 ---
 

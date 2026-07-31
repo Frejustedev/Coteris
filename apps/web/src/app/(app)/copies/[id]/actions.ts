@@ -14,6 +14,7 @@ import { z } from 'zod'
 
 import {
   appliquerDécision,
+  demanderRéanalyse,
   validerQuestionEnLot,
   type RésultatRevue,
 } from '~/lib/services/review'
@@ -47,6 +48,30 @@ export async function validerDécision(entrée: unknown): Promise<RésultatRevue
   const requestId = (await headers()).get('x-request-id')
 
   const résultat = await appliquerDécision(principal, userId, {
+    ...analyse.data,
+    requestId,
+    now: new Date(),
+    auditSecret: auditSecret(),
+  })
+
+  if (résultat.ok) revalidatePath('/copies')
+  return résultat
+}
+
+/**
+ * Demande une nouvelle analyse d'une réponse.
+ *
+ * Typiquement après correction d'une transcription. Le traitement est
+ * asynchrone : le résultat apparaît quand le worker l'a produit.
+ */
+export async function relancerAnalyse(entrée: unknown): Promise<RésultatRevue> {
+  const analyse = schémaGroupée.safeParse(entrée)
+  if (!analyse.success) return { ok: false, message: 'Requête invalide.' }
+
+  const { userId, principal } = await requireUser()
+  const requestId = (await headers()).get('x-request-id')
+
+  const résultat = await demanderRéanalyse(principal, userId, {
     ...analyse.data,
     requestId,
     now: new Date(),

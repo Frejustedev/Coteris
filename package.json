@@ -19,6 +19,7 @@
     "smoke": "node scripts/smoke-test.mjs",
     "verify:review": "tsx scripts/verify-review.ts",
     "verify:worker": "tsx scripts/verify-worker.ts",
+    "verify:exports": "tsx scripts/verify-exports.ts",
     "jobs:migrate": "tsx -e \"import('@coteris/jobs').then(m => m.migrateQueue(process.env.DATABASE_URL))\"",
     "worker": "pnpm --filter @coteris/worker start",
     "db:generate": "pnpm --filter @coteris/database generate",

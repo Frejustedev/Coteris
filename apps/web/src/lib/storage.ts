@@ -1,5 +1,3 @@
-import 'server-only'
-
 /**
  * Accès au stockage depuis l'application web.
  *
@@ -10,6 +8,10 @@ import 'server-only'
  */
 
 import { createStorage, signAccess, type StorageDriver } from '@coteris/storage'
+
+import { assertServerOnly } from './server-guard'
+
+assertServerOnly('lib/storage')
 
 const globalForStorage = globalThis as unknown as { __coterisStorage?: StorageDriver }
 

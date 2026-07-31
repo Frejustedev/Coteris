@@ -17,6 +17,7 @@ const config: NextConfig = {
     '@coteris/pipeline',
     '@coteris/storage',
     '@coteris/jobs',
+    '@coteris/exports',
   ],
 
   typescript: {

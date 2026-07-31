@@ -3,13 +3,17 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { BadgeConfiance, Carte, Points, QualitéScan, StatutÉpreuve, Vide } from '~/components/ui'
+import { can } from '@coteris/auth'
+
 import {
   getAssessment,
   getAssessmentStats,
+  listExports,
   listQuestions,
   listSubmissions,
 } from '~/lib/repositories'
 import { requireUser } from '~/lib/session'
+import { PanneauExports } from './exports'
 
 export const metadata: Metadata = { title: 'Épreuve' }
 
@@ -22,10 +26,11 @@ export default async function ÉpreuvePage({ params }: { params: Promise<{ id: s
   const épreuve = await getAssessment(principal.organizationId, id)
   if (!épreuve) notFound()
 
-  const [questions, copies, stats] = await Promise.all([
+  const [questions, copies, stats, exports] = await Promise.all([
     listQuestions(principal.organizationId, id),
     listSubmissions(principal.organizationId, id),
     getAssessmentStats(principal.organizationId, id),
+    listExports(principal.organizationId, id),
   ])
 
   return (
@@ -126,6 +131,15 @@ export default async function ÉpreuvePage({ params }: { params: Promise<{ id: s
             </table>
           </div>
         )}
+      </Carte>
+
+      <Carte titre="Exports">
+        <PanneauExports
+          assessmentId={id}
+          existants={exports}
+          peutExporter={can(principal, 'export', 'create')}
+          peutLireAudit={can(principal, 'audit', 'read')}
+        />
       </Carte>
 
       <Carte titre={`Questions (${questions.length})`}>

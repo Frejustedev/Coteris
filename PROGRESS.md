@@ -28,13 +28,14 @@ Légende : ⬜ non commencé · 🟡 en cours · ✅ terminé et testé · ⛔ b
 | 8 | Validation humaine — actions câblées | ✅ |
 | 9 | Stockage des fichiers | ✅ |
 | 10 | Worker et file de travaux | ✅ |
-| 11 | Imports de copies, exports, banc d'essai | ⬜ |
+| 11 | Exports CSV et rapport d'audit | ✅ |
+| 12 | Import de copies, banc d'essai, PDF corrigé | ⬜ |
 | 8+ | Approfondissement des phases | ⬜ |
 
-**Tests exécutés à ce jour : 317, tous verts.** Dernière exécution : 2026-08-01.
+**Tests exécutés à ce jour : 362, tous verts.** Dernière exécution : 2026-08-01.
 
 ```
-Unitaires — 250, sans aucune infrastructure
+Unitaires — 278, sans aucune infrastructure
   @coteris/shared    62  (millipoints 30, confiance 15, configuration 17)
   @coteris/grading   40  (moteur de barème)
   @coteris/database   9  (invariants de schéma)
@@ -44,14 +45,16 @@ Unitaires — 250, sans aucune infrastructure
   @coteris/pipeline  12  (chaîne complète OCR → analyse → points → confiance)
   @coteris/storage   27  (clés, types réels, jetons d'accès)
   @coteris/jobs      12  (charges utiles, politiques de reprise, mise en file)
+  @coteris/exports   28  (échappement, injection de formule, format francophone)
 
 Intégration — 12, contre PostgreSQL 17 réel
   @coteris/audit     12  (verrous, détection d'altération, transactions)
 
-Bout en bout — 55, contre l'application, la base et le worker réels
-  pnpm smoke         28  (parcours utilisateur, sécurité du service de fichiers)
-  pnpm verify:review 15  (validation humaine, audit, recalcul)
-  pnpm verify:worker 12  (file transactionnelle, traitement, audit)
+Bout en bout — 72, contre l'application, la base, le worker et le stockage réels
+  pnpm smoke          28  (parcours utilisateur, sécurité du service de fichiers)
+  pnpm verify:review  15  (validation humaine, audit, recalcul)
+  pnpm verify:worker  12  (file transactionnelle, traitement, audit)
+  pnpm verify:exports 17  (permissions, contenu, format, traçabilité)
 ```
 
 ---
@@ -763,6 +766,68 @@ contre la base et le worker réels.
   existe, l'écran ne l'appelle pas.
 - Le maintien d'un worker permanent sur mutualisé reste à valider auprès du
   support d'o2switch. La variante `once` par cron, documentée, s'en passe.
+
+---
+
+### Étape 11 — Exports — ✅
+
+Deux exports au format CSV : **résultats** et **rapport d'audit**. Générés par des
+fonctions pures dans `@coteris/exports`, écrits dans le stockage, enregistrés et
+audités.
+
+**Trois choses qu'on découvre en général en production**
+
+1. **L'injection de formule.** Une cellule commençant par `=`, `+`, `-` ou `@` est
+   interprétée comme une formule à l'ouverture. Une valeur comme
+   `=HYPERLINK("http://x","cliquez")`, venue d'un nom importé, s'exécuterait sur le
+   poste de l'enseignant. Les valeurs concernées sont préfixées d'une apostrophe,
+   qui force le traitement en texte sans altérer ce qui est lu.
+2. **Le CSV « français ».** Excel en configuration française attend le
+   point-virgule comme séparateur ; une virgule ouvre le fichier dans une seule
+   colonne et l'utilisateur conclut que l'export est cassé.
+3. **La marque d'ordre des octets.** Sans elle, Excel lit le fichier dans
+   l'encodage local et les accents deviennent illisibles. Le test l'inspecte sur
+   les **octets bruts** : `TextDecoder` la retire silencieusement, ce qui ferait
+   croire à tort qu'elle est absente.
+
+**Une colonne ajoutée au cahier des charges**
+
+« Proposée / validée ». Un relevé qui mélangerait des notes encore proposées et des
+notes validées sans les distinguer serait trompeur — et c'est exactement le genre
+de document qu'on transmet à un jury. Une copie n'est marquée « validée » que si
+**chacune** de ses décisions l'est.
+
+**Le rapport d'audit inclut l'empreinte de chaque événement**, ce qui permet de
+confronter le document remis à un jury avec la chaîne restée en base. Sans elle,
+ce ne serait qu'une liste d'affirmations.
+
+**Un export est un document daté**, stocké et non régénéré au téléchargement :
+deux membres d'un jury doivent travailler sur le même fichier. Ils expirent après
+trente jours.
+
+**Permissions** — un correcteur ne crée pas d'export ; un administrateur technique
+n'en crée aucun et n'exporte aucune note. L'export d'audit exige en plus la
+permission de lire le journal.
+
+**Le bouton « Demander une nouvelle analyse »** est désormais câblé : il met un job
+en file et son événement d'audit dans la même transaction.
+
+**Une contrainte technique levée**
+
+`server-only` s'appuie sur une condition d'export propre au compilateur de Next.js
+et lève dès qu'on l'importe depuis un script Node — donc empêchait de vérifier les
+services en ligne de commande, or ce sont précisément les modules à tester.
+Remplacé par une garde équivalente qui fonctionne partout.
+
+**Tests** : 28 unitaires, 17 vérifications contre la base et le stockage réels.
+
+**Limites connues**
+
+- Pas de XLSX : le cahier des charges demande « Excel **ou** CSV », et le CSV
+  s'ouvre dans Excel. Un vrai classeur demanderait une bibliothèque supplémentaire.
+- Pas de PDF corrigé.
+- Aucun bouton d'import de copies : le stockage est prêt, l'écriture ne vient
+  encore que des exports.
 
 ---
 

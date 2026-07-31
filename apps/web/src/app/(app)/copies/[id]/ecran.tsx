@@ -20,7 +20,7 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
 
 import { BadgeConfiance, Points, formatPoints } from '~/components/ui'
 import type { CriterionDecision, QuestionReview } from '~/lib/repositories'
-import { validerDécision, validerQuestion } from './actions'
+import { relancerAnalyse, validerDécision, validerQuestion } from './actions'
 
 interface Copie {
   id: string
@@ -569,6 +569,22 @@ function ZoneNotation({
             Votre rôle ne permet pas de valider une correction.
           </p>
         )}
+
+        <button
+          type="button"
+          disabled={enCours}
+          onClick={() =>
+            exécuter(() =>
+              relancerAnalyse({ submissionId, questionId: question.questionId }),
+            )
+          }
+          className="w-full rounded-md border border-marine-100 px-3 py-2 text-sm text-anthracite-600 transition hover:bg-marine-50 disabled:opacity-40"
+        >
+          Demander une nouvelle analyse
+        </button>
+        <p className="text-center text-xs text-anthracite-400">
+          Le traitement est asynchrone : le résultat apparaît une fois la file traitée.
+        </p>
 
         {!peutFinaliser && (
           <p className="text-center text-xs text-anthracite-400">

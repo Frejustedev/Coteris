@@ -16,6 +16,7 @@
     "@coteris/audit": "workspace:*",
     "@coteris/auth": "workspace:*",
     "@coteris/database": "workspace:*",
+    "@coteris/exports": "workspace:*",
     "@coteris/grading": "workspace:*",
     "@coteris/jobs": "workspace:*",
     "@coteris/pipeline": "workspace:*",
@@ -27,7 +28,6 @@
     "postgres": "^3.4.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "server-only": "^0.0.1",
     "zod": "^3.24.1"
   },
   "devDependencies": {

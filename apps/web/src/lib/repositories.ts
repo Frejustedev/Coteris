@@ -11,10 +11,12 @@
  * requête ad hoc.
  */
 
-import 'server-only'
 import { and, asc, count, desc, eq, isNull, sql } from 'drizzle-orm'
 
 import { db, schema } from './db'
+import { assertServerOnly } from './server-guard'
+
+assertServerOnly('lib/repositories')
 
 // --- Épreuves ----------------------------------------------------------------
 
@@ -398,6 +400,27 @@ export async function getAssessmentStats(
         : Number(row['averageExact']),
     maxPoints: Number(row?.['maxPoints'] ?? 0),
   }
+}
+
+// --- Exports ------------------------------------------------------------------
+
+export async function listExports(organizationId: string, assessmentId: string) {
+  return db
+    .select({
+      id: schema.exportJobs.id,
+      fileName: schema.exportJobs.fileName,
+      kind: schema.exportJobs.kind,
+      createdAt: schema.exportJobs.createdAt,
+    })
+    .from(schema.exportJobs)
+    .where(
+      and(
+        eq(schema.exportJobs.assessmentId, assessmentId),
+        eq(schema.exportJobs.organizationId, organizationId),
+      ),
+    )
+    .orderBy(desc(schema.exportJobs.createdAt))
+    .limit(10)
 }
 
 // --- Audit --------------------------------------------------------------------

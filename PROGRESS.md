@@ -25,7 +25,8 @@ Légende : ⬜ non commencé · 🟡 en cours · ✅ terminé et testé · ⛔ b
 | 6bis | Pipeline de correction (logique métier) | ✅ |
 | 6ter | Données de démonstration réelles | ✅ |
 | 7 | Interface web — lecture et correction | ✅ |
-| 8 | Worker, stockage, actions de validation | ⬜ |
+| 8 | Validation humaine — actions câblées | ✅ |
+| 9 | Worker, stockage, imports, exports | ⬜ |
 | 8+ | Approfondissement des phases | ⬜ |
 
 **Tests exécutés à ce jour : 222, tous verts.** Dernière exécution : 2026-07-31.
@@ -558,17 +559,74 @@ mot de passe : demonstration-coteris
 Le hachage vient de Better Auth (`hashPassword`), qui possède le format. L'inventer
 aurait produit des comptes inutilisables.
 
-**Limites connues — importantes**
+**Limites connues**
 
-- **Les actions de correction ne sont pas câblées.** Accepter, modifier, refuser :
-  les boutons existent, sont **désactivés et le disent**. Les afficher actifs
-  donnerait l'illusion d'un produit terminé.
 - **Aucune image de copie n'est affichée** : la couche de stockage n'existe pas.
   La zone gauche affiche la référence de la zone plutôt qu'une illustration
   trompeuse.
 - Pas de worker : la correction est produite par le seed, pas déclenchée depuis
   l'interface.
 - Pas de création d'épreuve, pas d'import de copies, pas d'export.
+
+---
+
+### Étape 8 — Validation humaine — ✅
+
+**La promesse centrale du produit est maintenant effective.** `points_awarded`
+reste nul tant qu'aucun humain n'a tranché, et ces actions sont le seul chemin qui
+le renseigne.
+
+**Ce qui est refusé, et pourquoi**
+
+| Situation | Comportement |
+|---|---|
+| Rôle sans permission `grading.review` | Refusé côté serveur, quelle que soit l'interface |
+| Points supérieurs à la valeur du critère | Refusé |
+| Écart à la proposition sans motif | **Refusé** — une note modifiée sans justification est indéfendable devant un jury |
+| Modification d'une note déjà finalisée | Refusé : cela exige une nouvelle version, non encore implémentée |
+| Validation groupée hors cas vert | Refusée — le cahier des charges la réserve aux cas à confiance élevée |
+
+**Ce qui est conservé à chaque décision**
+
+Valeur avant, valeur après, auteur, date, motif, version du barème, version du
+corrigé, et si l'action était groupée. Rien n'est écrasé : chaque modification
+ajoute une ligne dans `human_reviews`.
+
+La décision, son historique et son événement d'audit **partagent une
+transaction**. Une note modifiée dont la trace manquerait — ou l'inverse —
+ruinerait la valeur probante du journal.
+
+**Une incohérence du seed corrigée**
+
+Le seed finalisait toutes les copies, y compris celles dont des décisions
+attendaient encore validation. Une note ne peut pas être définitive si ses
+critères ne le sont pas. Seules les copies dont **toutes** les analyses sont
+vertes — donc validées — sont désormais finalisées.
+
+**Architecture : service séparé de l'action serveur**
+
+Une action serveur ne s'appelle qu'à travers le protocole de Next.js, donc ne se
+teste pas directement. La logique vit dans `apps/web/src/lib/services/review.ts`,
+sans dépendance à Next.js ni à React ; l'action n'est qu'une enveloppe qui valide
+l'entrée et délègue.
+
+**Vérification**
+
+```
+$ pnpm verify:review
+```
+
+15 vérifications contre la base réelle, toutes vertes. Elles couvrent les refus
+ci-dessus, la conservation de la valeur précédente et du motif, l'ajout
+d'**exactement un** événement d'audit, le recalcul de la note, et — le point
+important — **la chaîne d'audit reste intègre après écriture**.
+
+**Limites connues**
+
+- Le refus, le report à un autre correcteur et le commentaire à l'étudiant ne sont
+  pas encore exposés dans l'interface.
+- La modification d'une note finalisée est refusée plutôt que gérée : le
+  versionnement de note reste à implémenter.
 
 ---
 

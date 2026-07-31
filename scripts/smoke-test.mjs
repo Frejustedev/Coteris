@@ -146,6 +146,14 @@ async function main() {
     copie.corps.includes('validation humaine') || copie.corps.includes('Validé à'),
     'l’état de validation humaine est visible',
   )
+  vérifier(
+    copie.corps.includes('Accepter'),
+    'les actions de validation sont proposées au correcteur',
+  )
+  vérifier(
+    !copie.corps.includes('Non encore implémenté'),
+    'aucune action n’est présentée comme non implémentée',
+  )
 
   // --- Historique --------------------------------------------------------------
   console.log('\nHistorique')

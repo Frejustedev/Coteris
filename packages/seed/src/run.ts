@@ -505,6 +505,10 @@ async function seedSubmissions(db: Db, ctx: SubmissionContext): Promise<void> {
 
     let totalCopie = 0
     let maxCopie = 0
+    // Une copie n'est finalisable que si TOUTES ses décisions ont été validées.
+    // Finaliser une note dont des critères restent en attente contredirait le
+    // principe « aucune note définitive sans validation humaine ».
+    let toutValidé = true
 
     for (const [index, q] of QUESTIONS.entries()) {
       const réponse = copie.answers[q.number] ?? ''
@@ -547,9 +551,12 @@ async function seedSubmissions(db: Db, ctx: SubmissionContext): Promise<void> {
       if (résultat.niveau === 'green') vertes += 1
       else if (résultat.niveau === 'orange') orange += 1
       else rouges += 1
+
+      if (résultat.niveau !== 'green') toutValidé = false
     }
 
-    // Note globale de la copie, finalisée par le coordonnateur.
+    // Note globale. Finalisée uniquement si chaque critère a été validé ;
+    // sinon elle reste une proposition, en attente de l'enseignant.
     await db.insert(grades).values({
       organizationId: ctx.orgId,
       submissionId,
@@ -558,20 +565,22 @@ async function seedSubmissions(db: Db, ctx: SubmissionContext): Promise<void> {
       pointsExact: totalCopie,
       pointsRounded: totalCopie,
       pointsMax: maxCopie,
-      finalizedBy: ctx.coordinatorId,
-      finalizedAt: at(minute + 4),
+      finalizedBy: toutValidé ? ctx.coordinatorId : null,
+      finalizedAt: toutValidé ? at(minute + 4) : null,
     })
 
-    await audit(db, {
-      organizationId: ctx.orgId,
-      actorId: ctx.coordinatorId,
-      actorRole: 'coordinator',
-      action: AUDIT_ACTIONS.GRADE_FINALIZE,
-      objectType: 'submission',
-      objectId: submissionId,
-      newValue: { pointsExact: totalCopie, pointsMax: maxCopie },
-      occurredAt: at(minute + 4),
-    })
+    if (toutValidé) {
+      await audit(db, {
+        organizationId: ctx.orgId,
+        actorId: ctx.coordinatorId,
+        actorRole: 'coordinator',
+        action: AUDIT_ACTIONS.GRADE_FINALIZE,
+        objectType: 'submission',
+        objectId: submissionId,
+        newValue: { pointsExact: totalCopie, pointsMax: maxCopie },
+        occurredAt: at(minute + 4),
+      })
+    }
 
     console.log(
       `  ${copie.anonymousCode} — ${(totalCopie / 1000).toFixed(2)} / ${(maxCopie / 1000).toFixed(0)}` +

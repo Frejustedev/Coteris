@@ -15,10 +15,12 @@
  */
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
 
 import { BadgeConfiance, Points, formatPoints } from '~/components/ui'
-import type { QuestionReview } from '~/lib/repositories'
+import type { CriterionDecision, QuestionReview } from '~/lib/repositories'
+import { validerDécision, validerQuestion } from './actions'
 
 interface Copie {
   id: string
@@ -168,6 +170,7 @@ export function ÉcranCorrection({
         <ZoneRéponse question={question} extraitsSurlignés={extraitsSurlignés} />
         <ZoneNotation
           question={question}
+          submissionId={copie.id}
           onSurvol={setCritèreSurvolé}
           peutValider={peutValider}
           peutFinaliser={peutFinaliser}
@@ -336,16 +339,37 @@ function ZoneRéponse({
 
 function ZoneNotation({
   question,
+  submissionId,
   onSurvol,
   peutValider,
   peutFinaliser,
 }: {
   question: QuestionReview
+  submissionId: string
   onSurvol: (criterionId: string | null) => void
   peutValider: boolean
   peutFinaliser: boolean
 }) {
+  const router = useRouter()
+  const [enCours, démarrer] = useTransition()
+  const [erreur, setErreur] = useState<string | null>(null)
+  const [enÉdition, setEnÉdition] = useState<string | null>(null)
+
   const validé = question.decisions.every((d) => d.pointsAwarded !== null)
+  const validableEnLot = question.confidenceLevel === 'green' && !validé
+
+  function exécuter(action: () => Promise<{ ok: boolean; message?: string }>) {
+    setErreur(null)
+    démarrer(async () => {
+      const résultat = await action()
+      if (!résultat.ok) {
+        setErreur(résultat.message ?? 'L’action a échoué.')
+        return
+      }
+      setEnÉdition(null)
+      router.refresh()
+    })
+  }
 
   return (
     <section className="rounded-lg border border-marine-100 bg-white">
@@ -435,6 +459,24 @@ function ZoneNotation({
                   ? 'En attente de validation humaine'
                   : `Validé à ${formatPoints(d.pointsAwarded)} point(s)`}
               </p>
+
+              {peutValider && !d.excluded && (
+                <ActionsCritère
+                  décision={d}
+                  enCours={enCours}
+                  ouvert={enÉdition === d.decisionId}
+                  onOuvrir={setEnÉdition}
+                  onValider={(points, motif) =>
+                    exécuter(() =>
+                      validerDécision({
+                        decisionId: d.decisionId,
+                        points,
+                        ...(motif.trim() === '' ? {} : { reason: motif.trim() }),
+                      }),
+                    )
+                  }
+                />
+              )}
             </li>
           ))}
         </ul>
@@ -446,36 +488,169 @@ function ZoneNotation({
           </span>
         </div>
 
-        {/*
-          Les actions ne sont pas encore câblées : les afficher actives donnerait
-          l'illusion d'un produit terminé. Elles sont désactivées et le disent.
-        */}
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            disabled
-            title="Non encore implémenté"
-            className="rounded-md bg-marine-700 px-3 py-2 text-sm font-medium text-white opacity-40"
+        {erreur && (
+          <p
+            role="alert"
+            className="rounded-md border border-rouge-bd bg-rouge-bg px-3 py-2 text-sm text-rouge-fg"
           >
-            {validé ? 'Déjà validé' : 'Accepter'}
-          </button>
-          <button
-            type="button"
-            disabled
-            title="Non encore implémenté"
-            className="rounded-md border border-marine-100 px-3 py-2 text-sm opacity-40"
-          >
-            Modifier
-          </button>
-        </div>
+            {erreur}
+          </p>
+        )}
 
-        <p className="text-center text-xs text-anthracite-400">
-          {peutValider
-            ? 'Validation et modification : non encore implémentées.'
-            : 'Votre rôle ne permet pas de valider une correction.'}
-          {peutFinaliser ? '' : ' La finalisation revient au coordonnateur.'}
-        </p>
+        {peutValider ? (
+          validé ? (
+            <p className="rounded-md border border-vert-bd bg-vert-bg px-3 py-2 text-center text-sm text-vert-fg">
+              Tous les critères de cette question ont été validés.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {/*
+                La validation groupée n'est proposée que sur un cas à confiance
+                élevée : c'est la condition posée par le cahier des charges.
+                Chaque décision reste consultable, et l'action est auditée comme
+                groupée.
+              */}
+              <button
+                type="button"
+                disabled={enCours || !validableEnLot}
+                onClick={() =>
+                  exécuter(() => validerQuestion({ submissionId, questionId: question.questionId }))
+                }
+                className="w-full rounded-md bg-marine-700 px-3 py-2 text-sm font-medium text-white transition hover:bg-marine-600 disabled:opacity-40"
+              >
+                {enCours ? 'Enregistrement…' : 'Accepter tous les critères'}
+              </button>
+              {!validableEnLot && (
+                <p className="text-center text-xs text-anthracite-400">
+                  Ce cas n’est pas classé en confiance élevée : validez critère par critère.
+                </p>
+              )}
+            </div>
+          )
+        ) : (
+          <p className="rounded-md border border-marine-100 bg-marine-50/40 px-3 py-2 text-center text-sm text-anthracite-600">
+            Votre rôle ne permet pas de valider une correction.
+          </p>
+        )}
+
+        {!peutFinaliser && (
+          <p className="text-center text-xs text-anthracite-400">
+            La finalisation de la note revient au coordonnateur.
+          </p>
+        )}
       </div>
     </section>
+  )
+}
+
+/**
+ * Contrôles de validation d'un critère.
+ *
+ * Le motif devient obligatoire dès que le correcteur s'écarte de la proposition :
+ * le champ apparaît, et le serveur refuse l'enregistrement sans lui. Une note
+ * modifiée sans justification est indéfendable devant un jury.
+ */
+function ActionsCritère({
+  décision,
+  enCours,
+  ouvert,
+  onOuvrir,
+  onValider,
+}: {
+  décision: CriterionDecision
+  enCours: boolean
+  ouvert: boolean
+  onOuvrir: (id: string | null) => void
+  onValider: (points: number, motif: string) => void
+}) {
+  const [points, setPoints] = useState(décision.pointsProposed / 1000)
+  const [motif, setMotif] = useState('')
+
+  const millipoints = Math.round(points * 1000)
+  const modifie = millipoints !== décision.pointsProposed
+  const motifManquant = modifie && motif.trim() === ''
+
+  if (!ouvert) {
+    return (
+      <div className="mt-2 flex gap-2">
+        <button
+          type="button"
+          disabled={enCours || décision.pointsAwarded !== null}
+          onClick={() => onValider(décision.pointsProposed, '')}
+          className="rounded-md border border-marine-100 px-2.5 py-1 text-xs font-medium transition hover:bg-marine-50 disabled:opacity-40"
+        >
+          Accepter
+        </button>
+        <button
+          type="button"
+          disabled={enCours}
+          onClick={() => onOuvrir(décision.decisionId)}
+          className="rounded-md border border-marine-100 px-2.5 py-1 text-xs transition hover:bg-marine-50 disabled:opacity-40"
+        >
+          Modifier
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-2 space-y-2 rounded-md border border-marine-100 bg-marine-50/40 p-2">
+      <div className="flex items-center gap-2">
+        <label htmlFor={`pts-${décision.decisionId}`} className="text-xs text-anthracite-600">
+          Points
+        </label>
+        <input
+          id={`pts-${décision.decisionId}`}
+          type="number"
+          step="0.25"
+          min={0}
+          max={décision.pointsPossible / 1000}
+          value={points}
+          onChange={(e) => setPoints(Number(e.target.value))}
+          className="tabulaire w-20 rounded border border-marine-100 bg-white px-2 py-1 text-xs"
+        />
+        <span className="text-xs text-anthracite-400">
+          sur {formatPoints(décision.pointsPossible)}
+        </span>
+      </div>
+
+      {modifie && (
+        <div>
+          <label
+            htmlFor={`motif-${décision.decisionId}`}
+            className="mb-1 block text-xs text-anthracite-600"
+          >
+            Motif de la modification (requis)
+          </label>
+          <input
+            id={`motif-${décision.decisionId}`}
+            type="text"
+            value={motif}
+            onChange={(e) => setMotif(e.target.value)}
+            placeholder="Formulation équivalente acceptée"
+            className="w-full rounded border border-marine-100 bg-white px-2 py-1 text-xs"
+          />
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={enCours || motifManquant}
+          onClick={() => onValider(millipoints, motif)}
+          className="rounded-md bg-marine-700 px-2.5 py-1 text-xs font-medium text-white disabled:opacity-40"
+        >
+          Enregistrer
+        </button>
+        <button
+          type="button"
+          disabled={enCours}
+          onClick={() => onOuvrir(null)}
+          className="rounded-md border border-marine-100 px-2.5 py-1 text-xs"
+        >
+          Annuler
+        </button>
+      </div>
+    </div>
   )
 }

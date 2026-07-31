@@ -1,0 +1,84 @@
+@import 'tailwindcss';
+
+/**
+ * Identité visuelle de Coteris.
+ *
+ * Sobre et institutionnelle : l'interface accompagne une décision qui engage un
+ * enseignant devant un jury. Rien ne doit ressembler à un tableau de bord
+ * marketing.
+ *
+ * Les trois couleurs de confiance sont volontairement distinctes du vert pétrole
+ * de la marque : un correcteur doit pouvoir lire un état en un coup d'œil sans le
+ * confondre avec un accent décoratif.
+ */
+@theme {
+  --color-marine-50: #eef2f9;
+  --color-marine-100: #d5deef;
+  --color-marine-300: #8098c6;
+  --color-marine-600: #17408c;
+  --color-marine-700: #0d2e67;
+  --color-marine-900: #081b3d;
+
+  --color-petrole-50: #e9f5f5;
+  --color-petrole-300: #6fbfbf;
+  --color-petrole-600: #178c8c;
+  --color-petrole-700: #106868;
+
+  --color-or-100: #f6edd8;
+  --color-or-500: #c8a246;
+  --color-or-700: #94762b;
+
+  --color-anthracite-400: #9ca3af;
+  --color-anthracite-600: #4b5563;
+  --color-anthracite-800: #262f3d;
+
+  --color-fond: #f7f8fa;
+
+  /* États de confiance */
+  --color-vert-bg: #e7f4ec;
+  --color-vert-fg: #1c6b3c;
+  --color-vert-bd: #a8d6bb;
+  --color-orange-bg: #fdf1e0;
+  --color-orange-fg: #96591a;
+  --color-orange-bd: #efcb96;
+  --color-rouge-bg: #fbeaea;
+  --color-rouge-fg: #9b2c2c;
+  --color-rouge-bd: #eab3b3;
+
+  --font-titre: var(--police-titre), ui-sans-serif, system-ui, sans-serif;
+  --font-texte: var(--police-texte), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
+}
+
+html {
+  background-color: var(--color-fond);
+  color: var(--color-anthracite-800);
+}
+
+body {
+  font-family: var(--font-texte);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-titre);
+  letter-spacing: -0.015em;
+}
+
+/**
+ * Références et valeurs chiffrées en monospace : numéros de copie anonyme,
+ * points, horodatages. Elles doivent s'aligner et se comparer d'un coup d'œil.
+ */
+.tabulaire {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Focus visible partout : l'écran de correction se pilote au clavier. */
+:focus-visible {
+  outline: 2px solid var(--color-petrole-600);
+  outline-offset: 2px;
+}

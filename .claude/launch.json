@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "coteris-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@coteris/web", "dev"],
+      "port": 3000
+    }
+  ]
+}

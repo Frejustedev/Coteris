@@ -24,7 +24,8 @@ Légende : ⬜ non commencé · 🟡 en cours · ✅ terminé et testé · ⛔ b
 | 6 | Abstractions IA/OCR et fournisseur simulé | ✅ |
 | 6bis | Pipeline de correction (logique métier) | ✅ |
 | 6ter | Données de démonstration réelles | ✅ |
-| 7 | Interface web et worker | ⬜ |
+| 7 | Interface web — lecture et correction | ✅ |
+| 8 | Worker, stockage, actions de validation | ⬜ |
 | 8+ | Approfondissement des phases | ⬜ |
 
 **Tests exécutés à ce jour : 222, tous verts.** Dernière exécution : 2026-07-31.
@@ -485,6 +486,89 @@ conformité planifié.
   Inventer ici un format de hachage risquerait de ne pas correspondre.
 - Les images de copies sont référencées par clé mais n'existent pas sur le disque :
   il n'y a pas encore de couche de stockage.
+
+---
+
+### Étape 7 — Interface web — ✅ (lecture et correction)
+
+**Coteris est désormais utilisable dans un navigateur.**
+
+Next.js 15, App Router, rendu serveur. Identité visuelle du cahier des charges :
+bleu marine, vert pétrole, or, Manrope et Inter. Sobre et institutionnelle —
+l'interface accompagne une décision qui engage un enseignant devant un jury.
+
+**Écrans livrés**
+
+| Écran | Contenu |
+|---|---|
+| Connexion / inscription | Better Auth, mot de passe d'au moins 12 caractères |
+| Tableau de bord | Épreuves de l'organisation, barème, nombre de copies |
+| Épreuve | Statistiques, liste des copies avec niveaux de confiance, questions |
+| **Correction** | Écran à trois zones |
+| Historique | Journal d'audit, avec l'empreinte de chaque événement |
+
+**L'écran de correction**
+
+Trois zones, conformes à la section 21 : la copie à gauche, la réponse au centre,
+la notation à droite. Survoler un critère **surligne dans la transcription
+l'extrait exact qui le justifie** — c'est la traduction visuelle de « aucune note
+sans preuve ». Navigation au clavier (`j` / `k`), ignorée dès qu'un champ de saisie
+a le focus.
+
+**Une lacune produit corrigée en chemin**
+
+Un utilisateur qui s'inscrivait n'appartenait à aucune organisation : il était
+renvoyé à la connexion sans comprendre pourquoi. L'inscription crée maintenant
+**l'espace individuel** de l'enseignant, où il cumule coordonnateur et correcteur.
+
+Le cumul est **déduit** de `organization.isPersonal` au moment de construire le
+principal, et non dupliqué en base : la table `member` porte un index unique sur
+(organisation, utilisateur), et deux lignes auraient créé une seconde source de
+vérité qui aurait fini par diverger.
+
+**Vérification — test de fumée HTTP**
+
+```
+$ pnpm smoke
+```
+
+22 vérifications, toutes vertes. Il parcourt le chemin réel d'un utilisateur et
+vérifie notamment :
+
+- un visiteur non connecté est redirigé hors du tableau de bord ;
+- **une requête d'authentification sans en-tête `Origin` est refusée** (CSRF) ;
+- l'écran de correction rend bien ses trois zones et affiche « total proposé »,
+  distinct d'une note définitive ;
+- **aucune identité d'étudiant n'apparaît** sur la page d'épreuve : l'anonymat
+  tient ;
+- une épreuve hors de l'organisation renvoie 404 — elle est *introuvable*, pas
+  « refusée », ce qui évite de confirmer son existence.
+
+Écrit en HTTP plutôt qu'en pilotage de navigateur : déterministe, rapide, et il
+vérifie ce qui compte — le rendu serveur et le cloisonnement — sans dépendre du
+minutage de l'hydratation.
+
+**Comptes de démonstration**
+
+```
+coordinateur@demo.coteris.local · correcteur1@… · correcteur2@…
+mot de passe : demonstration-coteris
+```
+
+Le hachage vient de Better Auth (`hashPassword`), qui possède le format. L'inventer
+aurait produit des comptes inutilisables.
+
+**Limites connues — importantes**
+
+- **Les actions de correction ne sont pas câblées.** Accepter, modifier, refuser :
+  les boutons existent, sont **désactivés et le disent**. Les afficher actifs
+  donnerait l'illusion d'un produit terminé.
+- **Aucune image de copie n'est affichée** : la couche de stockage n'existe pas.
+  La zone gauche affiche la référence de la zone plutôt qu'une illustration
+  trompeuse.
+- Pas de worker : la correction est produite par le seed, pas déclenchée depuis
+  l'interface.
+- Pas de création d'épreuve, pas d'import de copies, pas d'export.
 
 ---
 

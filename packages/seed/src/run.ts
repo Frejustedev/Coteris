@@ -18,7 +18,10 @@ import { sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 
+import { hashPassword } from 'better-auth/crypto'
+
 import {
+  accounts,
   answerKeyElements,
   answerKeyVersions,
   answerKeys,
@@ -58,6 +61,9 @@ const AUDIT_SECRET =
   process.env['AUDIT_HASH_SECRET'] ?? 'secret-de-demonstration-au-moins-32-caracteres'
 
 const hash = (value: string): string => createHash('sha256').update(value, 'utf8').digest('hex')
+
+/** Mot de passe des comptes de démonstration, en développement uniquement. */
+const DEMO_PASSWORD = 'demonstration-coteris'
 
 /** Horodatages fixes : le seed doit être reproductible. */
 const T0 = new Date('2026-06-15T08:00:00.000Z')
@@ -144,6 +150,10 @@ interface SeededUsers {
 async function seedUsers(db: Db, orgId: string): Promise<SeededUsers> {
   const ids: Record<string, string> = {}
 
+  // Mot de passe commun aux comptes de démonstration. Il n'a de sens que sur un
+  // poste de développement : le seed refuse de s'exécuter en production.
+  const empreinte = await hashPassword(DEMO_PASSWORD)
+
   for (const u of USERS) {
     const [user] = await db
       .insert(users)
@@ -152,6 +162,15 @@ async function seedUsers(db: Db, orgId: string): Promise<SeededUsers> {
 
     const userId = String(user?.id)
     ids[u.key] = userId
+
+    // Le hachage vient de Better Auth : c'est lui qui possède le format, et
+    // l'inventer ici produirait des comptes impossibles à utiliser.
+    await db.insert(accounts).values({
+      userId,
+      accountId: userId,
+      providerId: 'credential',
+      password: empreinte,
+    })
 
     await db.insert(members).values({ organizationId: orgId, userId, role: u.role })
 
@@ -833,8 +852,9 @@ async function report(db: Db, orgId: string): Promise<void> {
   console.log(`  preuves      ${row?.['preuves']}`)
   console.log(`  validations  ${row?.['validations']}`)
   console.log(`  audit        ${row?.['audit']} événements`)
-  console.log('\nComptes de démonstration (mots de passe à créer via l’application) :')
+  console.log('\nComptes de démonstration :')
   for (const u of USERS) console.log(`  ${u.email}  —  ${u.role}`)
+  console.log(`\n  Mot de passe commun : ${DEMO_PASSWORD}`)
 }
 
 main().catch((error: unknown) => {

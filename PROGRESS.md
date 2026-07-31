@@ -19,18 +19,23 @@ Légende : ⬜ non commencé · 🟡 en cours · ✅ terminé et testé · ⛔ b
 | 1 | Monorepo, outillage, CI, Docker | ✅ |
 | 2 | Modèle de données et migrations | ✅ |
 | 3 | Moteur de barème déterministe | ✅ |
-| 4 | Journal d'audit à chaîne de hash | ⬜ |
+| 4 | Journal d'audit à chaîne de hash | ✅ |
 | 5 | Authentification, organisations, rôles | ⬜ |
 | 6 | Abstractions IA/OCR et benchmark | ⬜ |
 | 7 | Tranche verticale de bout en bout | ⬜ |
 | 8+ | Approfondissement des phases | ⬜ |
 
-**Tests exécutés à ce jour : 111, tous verts.** Dernière exécution : 2026-07-31.
+**Tests exécutés à ce jour : 139, tous verts.** Dernière exécution : 2026-07-31.
 
 ```
-@coteris/shared    62 tests  (millipoints 30, confidence 15, env 17)
-@coteris/grading   40 tests  (moteur de barème)
-@coteris/database   9 tests  (invariants de schéma)
+Unitaires — 127, sans aucune infrastructure
+  @coteris/shared    62  (millipoints 30, confidence 15, env 17)
+  @coteris/grading   40  (moteur de barème)
+  @coteris/database   9  (invariants de schéma)
+  @coteris/audit     16  (chaîne de hash)
+
+Intégration — 12, contre PostgreSQL 17 réel
+  @coteris/audit     12  (verrous, détection d'altération, transactions)
 ```
 
 ---
@@ -220,6 +225,63 @@ reste dans [0, barème] » sur toutes les combinaisons d'états.
   cloisonnement repose pour l'instant sur la couche applicative. RLS viendra la
   doubler à l'étape de durcissement.
 - Aucune donnée de démonstration n'existe encore : `pnpm db:seed` n'est pas implémenté.
+
+---
+
+### Étape 4 — Journal d'audit à chaîne de hash — ✅
+
+**Réalisé**
+
+- Chaîne HMAC-SHA256 **par organisation**, pas globale : deux établissements
+  écrivent en parallèle sans se bloquer. Verrou consultatif de portée
+  transactionnelle pour sérialiser les écritures d'une même organisation.
+- `appendAuditEvent` **exige** une transaction en premier paramètre ; aucune
+  variante ne s'en passe. L'audit et l'action qu'il décrit sont validés ensemble.
+- Sérialisation canonique : clés triées récursivement, dates en ISO 8601 UTC,
+  nombres non finis rejetés. Sans cela, un objet relu depuis `jsonb` produirait un
+  hash différent de celui calculé à l'écriture.
+- `verifyChain` distingue quatre types de rupture et indique la position exacte.
+- Verrou en ajout seul vérifié sur les **trois** vecteurs : UPDATE, DELETE, TRUNCATE.
+
+**Deux problèmes trouvés en testant**
+
+1. **`pnpm test` exigeait une base de données.** Vitest ramassait les tests
+   d'intégration dans la passe unitaire. Le job « qualité » de la CI, qui ne démarre
+   pas PostgreSQL, aurait échoué. Corrigé par des configurations Vitest distinctes.
+2. **La suppression du dernier événement n'est pas détectable** par la seule
+   vérification de chaîne : aucun trou de séquence, aucun chaînage rompu. C'est une
+   limite structurelle de toute chaîne de hash locale. Elle est couverte par un test
+   qui **documente** le comportement au lieu de le masquer, et la parade — archiver
+   hors base le dernier hash validé — est notée pour l'étape de durcissement.
+
+**Fichiers importants**
+
+| Fichier | Contenu |
+|---|---|
+| `packages/audit/src/hash.ts` | Sérialisation canonique et HMAC |
+| `packages/audit/src/append.ts` | Écriture transactionnelle et verrou par organisation |
+| `packages/audit/src/verify.ts` | Vérification et typologie des ruptures |
+| `packages/audit/src/audit.integration.test.ts` | 12 tests contre une base réelle |
+| `docs/audit-trail.md` | Garanties, limites assumées, événements obligatoires |
+
+**Tests exécutés**
+
+```
+✓ hash.test.ts               16 tests  (sans base)
+✓ audit.integration.test.ts  12 tests  (PostgreSQL 17 réel)
+```
+
+Les tests d'altération désactivent temporairement le déclencheur pour simuler un
+attaquant disposant d'un accès complet à la base — la seule menace que la chaîne de
+hash adresse réellement.
+
+**Limites connues**
+
+- La chaîne ne protège pas contre un attaquant possédant à la fois
+  `AUDIT_HASH_SECRET` et un accès complet à la base. Documenté sans détour dans
+  `docs/audit-trail.md` ; aucune promesse de type « blockchain » n'est faite.
+- Le service applicatif qui appellera `appendAuditEvent` pour chaque action métier
+  n'existe pas encore : la brique est prête, elle n'est câblée à rien.
 
 ---
 

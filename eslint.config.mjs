@@ -114,6 +114,21 @@ export default tseslint.config(
     },
   },
 
+  // Points d'entrée en ligne de commande : leur sortie console EST leur
+  // interface. Un opérateur qui applique une migration doit voir ce qui se passe.
+  {
+    files: [
+      '**/src/migrate.ts',
+      '**/src/reset.ts',
+      '**/src/seed/**/*.ts',
+      'scripts/**/*.ts',
+      'apps/worker/src/main.ts',
+    ],
+    rules: {
+      'no-console': 'off',
+    },
+  },
+
   {
     files: ['**/*.test.ts', '**/*.spec.ts', 'tests/**/*.ts', 'scripts/**/*.ts'],
     rules: {

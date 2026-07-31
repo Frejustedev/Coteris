@@ -17,7 +17,7 @@ Légende : ⬜ non commencé · 🟡 en cours · ✅ terminé et testé · ⛔ b
 |---|---|---|
 | 0 | Plan, ADR, documentation fondatrice | ✅ |
 | 1 | Monorepo, outillage, CI, Docker | ✅ |
-| 2 | Modèle de données et migrations | ⬜ |
+| 2 | Modèle de données et migrations | ✅ |
 | 3 | Moteur de barème déterministe | ✅ |
 | 4 | Journal d'audit à chaîne de hash | ⬜ |
 | 5 | Authentification, organisations, rôles | ⬜ |
@@ -25,11 +25,12 @@ Légende : ⬜ non commencé · 🟡 en cours · ✅ terminé et testé · ⛔ b
 | 7 | Tranche verticale de bout en bout | ⬜ |
 | 8+ | Approfondissement des phases | ⬜ |
 
-**Tests exécutés à ce jour : 102, tous verts.** Dernière exécution : 2026-07-31.
+**Tests exécutés à ce jour : 111, tous verts.** Dernière exécution : 2026-07-31.
 
 ```
 @coteris/shared    62 tests  (millipoints 30, confidence 15, env 17)
 @coteris/grading   40 tests  (moteur de barème)
+@coteris/database   9 tests  (invariants de schéma)
 ```
 
 ---
@@ -165,6 +166,60 @@ reste dans [0, barème] » sur toutes les combinaisons d'états.
 - Le moteur n'est encore appelé par rien : ni base de données, ni interface. C'est une
   brique vérifiée, pas une fonctionnalité livrée.
 - `docs/grading-engine.md` reste à rédiger.
+
+---
+
+### Étape 2 — Modèle de données — ✅
+
+**Réalisé**
+
+- 38 tables, migration générée, **appliquée sur une base PostgreSQL 17 réelle**, et
+  cycle complet réinitialisation → migration vérifié.
+- Journal d'audit rendu **réellement** en ajout seul : trois déclencheurs bloquent
+  `UPDATE`, `DELETE` et `TRUNCATE`. Les trois vecteurs ont été testés contre la base,
+  pas supposés.
+- Contraintes `CHECK` traduisant les règles du produit : un verrouillage porte
+  toujours date **et** signataire ; une décision validée porte toujours son
+  validateur ; une note publiée a nécessairement été finalisée.
+- Anonymisation structurelle : `submissions` ne porte qu'un code anonyme, la
+  correspondance vit dans `submission_identities`.
+- 9 tests d'invariants de schéma, qui inspectent les définitions Drizzle sans base.
+
+**Trois problèmes trouvés et corrigés en cours de route**
+
+1. **`TRUNCATE` contournait le verrou d'audit.** Le déclencheur `BEFORE UPDATE OR
+   DELETE ... FOR EACH ROW` ne se déclenche pas sur `TRUNCATE`. Une seule commande
+   aurait effacé tout le journal. Corrigé par un second déclencheur de niveau
+   instruction.
+2. **`pnpm db:reset` laissait la base inutilisable.** `DROP SCHEMA public` ne touchait
+   pas au schéma `drizzle`, où est tracé l'historique des migrations. Drizzle croyait
+   donc la migration déjà appliquée et sautait la création des tables ; la migration
+   suivante échouait sans raison apparente.
+3. **Le nom `exports` cassait la génération.** Une constante nommée `exports` entre en
+   collision avec l'objet `exports` de CommonJS quand drizzle-kit transpile le
+   fichier. Renommée `exportJobs` ; la table SQL garde son nom.
+
+**Fichiers importants**
+
+| Fichier | Contenu |
+|---|---|
+| `packages/database/src/schema/*.ts` | 38 tables réparties par domaine |
+| `packages/database/src/schema/schema.test.ts` | Invariants structurels |
+| `packages/database/src/migrate.ts` | Migrations et durcissement de l'audit |
+| `packages/database/src/reset.ts` | Réinitialisation, refusée en production |
+| `packages/database/drizzle/0000_modern_chamber.sql` | Migration initiale |
+| `docs/data-model.md` | Principes et chaîne de preuve |
+
+**Migrations créées** : `0000_modern_chamber.sql` — 38 tables, index et contraintes.
+
+**Tests exécutés** : 111 au total, tous verts. `pnpm lint` ✅ · `pnpm typecheck` ✅
+
+**Limites connues**
+
+- Les politiques de sécurité au niveau ligne (RLS) ne sont pas encore en place. Le
+  cloisonnement repose pour l'instant sur la couche applicative. RLS viendra la
+  doubler à l'étape de durcissement.
+- Aucune donnée de démonstration n'existe encore : `pnpm db:seed` n'est pas implémenté.
 
 ---
 

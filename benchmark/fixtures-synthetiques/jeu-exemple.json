@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "description": "Jeu SYNTHÉTIQUE — aucune copie réelle. Sert uniquement à vérifier que le harnais d'évaluation fonctionne. Les résultats obtenus sur ce jeu n'ont AUCUNE valeur : les réponses sont écrites pour que la correspondance lexicale réussisse ou échoue de façon prévisible.",
+  "réponses": [
+    {
+      "id": "syn-001",
+      "submissionId": "syn-c1",
+      "questionId": "syn-q1",
+      "question": "Pourquoi administre-t-on de l'iode stable avant certaines explorations à la MIBG ?",
+      "corrigé": "L'iode stable permet de saturer ou bloquer la thyroïde afin de réduire sa captation d'iode radioactif libre.",
+      "transcriptionRéférence": "Il faut donner de l'iode non radioactif pour protéger la thyroïde avant l'injection.",
+      "critères": [
+        {
+          "id": "syn-k1",
+          "label": "Mention de l'iode stable",
+          "maxPoints": 250,
+          "acceptableAnswers": ["iode stable", "iode non radioactif"]
+        },
+        {
+          "id": "syn-k2",
+          "label": "Protection de la thyroïde",
+          "maxPoints": 250,
+          "acceptableAnswers": ["protéger la thyroïde", "bloquer la thyroïde"]
+        },
+        {
+          "id": "syn-k3",
+          "label": "Réduction de la captation",
+          "maxPoints": 500,
+          "acceptableAnswers": ["réduire la captation", "captation d'iode radioactif libre"]
+        }
+      ],
+      "décisionsRéférence": [
+        { "criterionId": "syn-k1", "référence": "present", "pointsRéférence": 250 },
+        { "criterionId": "syn-k2", "référence": "present", "pointsRéférence": 250 },
+        { "criterionId": "syn-k3", "référence": "absent", "pointsRéférence": 0 }
+      ],
+      "totalRéférence": 500,
+      "pointsMax": 1000,
+      "qualitéScan": "bonne",
+      "styleÉcriture": "lisible"
+    },
+    {
+      "id": "syn-002",
+      "submissionId": "syn-c2",
+      "questionId": "syn-q1",
+      "question": "Pourquoi administre-t-on de l'iode stable avant certaines explorations à la MIBG ?",
+      "corrigé": "L'iode stable permet de saturer ou bloquer la thyroïde afin de réduire sa captation d'iode radioactif libre.",
+      "transcriptionRéférence": "L'iode stable sert à bloquer la thyroïde et à réduire la captation d'iode radioactif libre.",
+      "critères": [
+        {
+          "id": "syn-k1",
+          "label": "Mention de l'iode stable",
+          "maxPoints": 250,
+          "acceptableAnswers": ["iode stable", "iode non radioactif"]
+        },
+        {
+          "id": "syn-k2",
+          "label": "Protection de la thyroïde",
+          "maxPoints": 250,
+          "acceptableAnswers": ["protéger la thyroïde", "bloquer la thyroïde"]
+        },
+        {
+          "id": "syn-k3",
+          "label": "Réduction de la captation",
+          "maxPoints": 500,
+          "acceptableAnswers": ["réduire la captation", "captation d'iode radioactif libre"]
+        }
+      ],
+      "décisionsRéférence": [
+        { "criterionId": "syn-k1", "référence": "present", "pointsRéférence": 250 },
+        { "criterionId": "syn-k2", "référence": "present", "pointsRéférence": 250 },
+        { "criterionId": "syn-k3", "référence": "present", "pointsRéférence": 500 }
+      ],
+      "totalRéférence": 1000,
+      "pointsMax": 1000,
+      "qualitéScan": "bonne",
+      "styleÉcriture": "lisible"
+    },
+    {
+      "id": "syn-003",
+      "submissionId": "syn-c3",
+      "questionId": "syn-q1",
+      "question": "Pourquoi administre-t-on de l'iode stable avant certaines explorations à la MIBG ?",
+      "corrigé": "L'iode stable permet de saturer ou bloquer la thyroïde afin de réduire sa captation d'iode radioactif libre.",
+      "transcriptionRéférence": "Pour eviter que la glande fixe le traceur.",
+      "critères": [
+        {
+          "id": "syn-k1",
+          "label": "Mention de l'iode stable",
+          "maxPoints": 250,
+          "acceptableAnswers": ["iode stable", "iode non radioactif"]
+        },
+        {
+          "id": "syn-k2",
+          "label": "Protection de la thyroïde",
+          "maxPoints": 250,
+          "acceptableAnswers": ["protéger la thyroïde", "bloquer la thyroïde"]
+        },
+        {
+          "id": "syn-k3",
+          "label": "Réduction de la captation",
+          "maxPoints": 500,
+          "acceptableAnswers": ["réduire la captation", "captation d'iode radioactif libre"]
+        }
+      ],
+      "décisionsRéférence": [
+        { "criterionId": "syn-k1", "référence": "absent", "pointsRéférence": 0 },
+        { "criterionId": "syn-k2", "référence": "present", "pointsRéférence": 250 },
+        { "criterionId": "syn-k3", "référence": "present", "pointsRéférence": 500 }
+      ],
+      "totalRéférence": 750,
+      "pointsMax": 1000,
+      "qualitéScan": "mauvaise",
+      "styleÉcriture": "difficile"
+    }
+  ]
+}

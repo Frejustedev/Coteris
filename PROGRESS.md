@@ -30,13 +30,14 @@ Légende : ⬜ non commencé · 🟡 en cours · ✅ terminé et testé · ⛔ b
 | 10 | Worker et file de travaux | ✅ |
 | 11 | Exports CSV et rapport d'audit | ✅ |
 | 12 | Import de copies | ✅ |
-| 13 | Segmentation réelle, banc d'essai, PDF corrigé | ⬜ |
+| 13 | Laboratoire de banc d'essai (phase 0) | ✅ |
+| 14 | Segmentation réelle, fournisseurs d'IA, PDF corrigé | ⬜ |
 | 8+ | Approfondissement des phases | ⬜ |
 
-**Tests exécutés à ce jour : 383, tous verts.** Dernière exécution : 2026-08-01.
+**Tests exécutés à ce jour : 408, tous verts.** Dernière exécution : 2026-08-01.
 
 ```
-Unitaires — 278, sans aucune infrastructure
+Unitaires — 303, sans aucune infrastructure
   @coteris/shared    62  (millipoints 30, confiance 15, configuration 17)
   @coteris/grading   40  (moteur de barème)
   @coteris/database   9  (invariants de schéma)
@@ -47,6 +48,7 @@ Unitaires — 278, sans aucune infrastructure
   @coteris/storage   27  (clés, types réels, jetons d'accès)
   @coteris/jobs      12  (charges utiles, politiques de reprise, mise en file)
   @coteris/exports   28  (échappement, injection de formule, format francophone)
+  @coteris/benchmark 25  (métriques, importateur, refus des données personnelles)
 
 Intégration — 12, contre PostgreSQL 17 réel
   @coteris/audit     12  (verrous, détection d'altération, transactions)
@@ -884,10 +886,83 @@ resterait éternellement « en attente », sans que l'enseignant comprenne pourq
 
 ---
 
+### Étape 13 — Laboratoire de banc d'essai — ✅
+
+C'était la **phase 0 déclarée obligatoire** par le cahier des charges, et la plus
+grande lacune du projet jusqu'ici. Le laboratoire existe désormais ; il attend des
+copies.
+
+**Ce qui est construit**
+
+| Élément | Contenu |
+|---|---|
+| `docs/benchmark-protocol.md` | Protocole, métriques, format, marche à suivre |
+| `docs/benchmark-results.md` | **Vide, et le dit** — aucun chiffre inventé |
+| `packages/benchmark` | Métriques et importateur, 25 tests |
+| `scripts/run-benchmark.ts` | Exécution, comparaison de pipelines |
+| `benchmark/fixtures-synthetiques/` | Jeu synthétique, pour vérifier le harnais |
+
+**Deux métriques désignées comme décisives**
+
+- **La fiabilité des verts.** Un cas vert est celui qu'un enseignant validera sans
+  relire. S'il s'y trouve des erreurs, la promesse du produit s'effondre — bien
+  plus sûrement qu'avec un rappel moyen.
+- **Les faux positifs.** Accorder des points que l'humain refuse avantage indûment
+  un candidat ; refuser des points qu'il accorde est rattrapé à la relecture. Ces
+  deux erreurs n'ont pas la même gravité et ne sont jamais fondues dans un score
+  unique.
+
+Le **biais** est mesuré signé : un système systématiquement trop généreux est un
+problème différent d'un système imprécis dans les deux sens.
+
+**Refus de conclure sous 200 critères.** Annoncer « 94 % d'accord » sur douze
+réponses serait trompeur ; le script affiche l'effectif et refuse de conclure.
+
+**L'importateur refuse les données personnelles**
+
+Champs `nom`, `email`, `matricule`… mais aussi **le contenu** : une adresse
+électronique ou une suite de chiffres ressemblant à un numéro, dans n'importe quel
+texte libre — c'est là qu'ils se glissent au moment de l'extraction. Il refuse
+aussi les incohérences qui fausseraient les mesures : décision sur un critère
+absent du barème, critère sans décision de référence (qui fausserait le rappel),
+total incohérent.
+
+**Un bug trouvé en exécutant le harnais**
+
+La première exécution donnait 0 % de précision et de rappel. Cause : le schéma de
+sortie d'analyse exige des identifiants UUID — parce qu'en production les critères
+en sont — alors que le jeu d'évaluation utilise des identifiants lisibles.
+**Chaque analyse était rejetée à la validation et retombait en « non
+concluante »**, sans que rien ne signale la vraie cause.
+
+Corrigé par une traduction déterministe dans le harnais, qui conserve les
+identifiants lisibles dans les rapports d'erreur. Sur un banc d'essai réel, ce bug
+aurait fait rejeter un fournisseur parfaitement bon.
+
+**Ce que le protocole exige avant toute mesure**
+
+Établir la référence humaine en faisant annoter le même sous-ensemble par **deux
+correcteurs indépendants**, et mesurer d'abord leur accord entre eux. C'est le
+plafond : le système ne peut pas être plus fiable que la référence à laquelle on
+le compare. Sans cette étape, un accord IA-humain de 85 % est ininterprétable.
+
+**Limites connues**
+
+- Seul le pipeline simulé est branché. Les pipelines A, B et C exigent un
+  fournisseur réel — dont le choix est précisément ce que ce banc d'essai doit
+  éclairer. Les déclarer implémentés serait mentir sur ce qui est mesurable.
+- Aucune donnée réelle. `docs/benchmark-results.md` le dit sans détour.
+
+---
+
 ## Mesures
 
-Aucune mesure n'a été effectuée. Cette section restera vide tant que le banc d'essai n'aura
-pas été exécuté sur des données réelles.
+Aucune mesure n'a été effectuée sur des données réelles. Cette section restera
+vide tant que le banc d'essai n'aura pas été exécuté sur de vraies copies.
+
+Le laboratoire est prêt et vérifié sur un jeu **synthétique**, dont les chiffres
+n'ont aucune valeur : les réponses y sont écrites pour que la correspondance
+lexicale réussisse ou échoue de façon prévisible.
 
 | Métrique | Valeur | Date | Conditions |
 |---|---|---|---|

@@ -8,6 +8,30 @@ importers:
 
   .:
     devDependencies:
+      '@coteris/ai':
+        specifier: workspace:*
+        version: link:packages/ai
+      '@coteris/audit':
+        specifier: workspace:*
+        version: link:packages/audit
+      '@coteris/auth':
+        specifier: workspace:*
+        version: link:packages/auth
+      '@coteris/benchmark':
+        specifier: workspace:*
+        version: link:packages/benchmark
+      '@coteris/grading':
+        specifier: workspace:*
+        version: link:packages/grading
+      '@coteris/jobs':
+        specifier: workspace:*
+        version: link:packages/jobs
+      '@coteris/pipeline':
+        specifier: workspace:*
+        version: link:packages/pipeline
+      '@coteris/shared':
+        specifier: workspace:*
+        version: link:packages/shared
       '@eslint/js':
         specifier: ^9.17.0
         version: 9.39.5
@@ -204,6 +228,22 @@ importers:
       '@coteris/shared':
         specifier: workspace:*
         version: link:../shared
+    devDependencies:
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)(lightningcss@1.32.0)(supports-color@7.2.0)
+
+  packages/benchmark:
+    dependencies:
+      '@coteris/shared':
+        specifier: workspace:*
+        version: link:../shared
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
     devDependencies:
       typescript:
         specifier: ^5.7.2

@@ -30,6 +30,9 @@ interface Copie {
   assessmentTitle: string
 }
 
+/** Question enrichie de l'URL signée de sa zone recadrée, si le fichier existe. */
+type QuestionAffichée = QuestionReview & { imageUrl: string | null }
+
 export function ÉcranCorrection({
   copie,
   questions,
@@ -37,7 +40,7 @@ export function ÉcranCorrection({
   peutFinaliser,
 }: {
   copie: Copie
-  questions: QuestionReview[]
+  questions: QuestionAffichée[]
   peutValider: boolean
   peutFinaliser: boolean
 }) {
@@ -187,26 +190,60 @@ export function ÉcranCorrection({
 
 // --- Zone gauche : la copie ---------------------------------------------------
 
-function ZoneCopie({ question, code }: { question: QuestionReview; code: string }) {
+function ZoneCopie({ question, code }: { question: QuestionAffichée; code: string }) {
+  const [zoom, setZoom] = useState(1)
+
   return (
     <section className="rounded-lg border border-marine-100 bg-white">
-      <header className="border-b border-marine-50 px-4 py-2.5">
+      <header className="flex items-center justify-between border-b border-marine-50 px-4 py-2.5">
         <h2 className="text-sm font-semibold text-marine-700">Copie</h2>
+        {question.imageUrl && (
+          <div className="flex items-center gap-1">
+            {([1, 1.5, 2] as const).map((niveau) => (
+              <button
+                key={niveau}
+                type="button"
+                onClick={() => setZoom(niveau)}
+                aria-pressed={zoom === niveau}
+                className={`rounded px-1.5 py-0.5 text-xs transition ${
+                  zoom === niveau
+                    ? 'bg-marine-700 text-white'
+                    : 'text-anthracite-600 hover:bg-marine-50'
+                }`}
+              >
+                ×{niveau}
+              </button>
+            ))}
+          </div>
+        )}
       </header>
       <div className="p-4">
-        {/*
-          Le stockage des images n'est pas encore implémenté : on affiche la
-          référence de la zone plutôt qu'une image d'illustration trompeuse.
-        */}
-        <div className="flex aspect-4/3 flex-col items-center justify-center rounded-md border border-dashed border-marine-100 bg-marine-50/40 px-4 text-center">
-          <p className="text-sm text-anthracite-600">Zone de réponse recadrée</p>
-          <p className="tabulaire mt-2 text-xs break-all text-anthracite-400">
-            {question.regionImageKey ?? 'aucune zone associée'}
-          </p>
-          <p className="mt-3 text-xs text-anthracite-400">
-            L’affichage de l’image nécessite la couche de stockage, non encore implémentée.
-          </p>
-        </div>
+        {question.imageUrl ? (
+          <div className="overflow-auto rounded-md border border-marine-100 bg-marine-50/30">
+            {/*
+              Image servie par /api/fichiers, qui vérifie session, permission et
+              jeton signé. Pas de composant next/image : l'optimiseur mettrait en
+              cache une copie d'examen sur le disque du serveur.
+            */}
+            <img
+              src={question.imageUrl}
+              alt={`Zone de réponse à la question ${question.number} de la copie ${code}`}
+              style={{ width: `${zoom * 100}%` }}
+              className="block max-w-none"
+            />
+          </div>
+        ) : (
+          <div className="flex aspect-4/3 flex-col items-center justify-center rounded-md border border-dashed border-marine-100 bg-marine-50/40 px-4 text-center">
+            <p className="text-sm text-anthracite-600">Zone de réponse recadrée</p>
+            <p className="tabulaire mt-2 text-xs break-all text-anthracite-400">
+              {question.regionImageKey ?? 'aucune zone associée'}
+            </p>
+            <p className="mt-3 text-xs text-anthracite-400">
+              Aucun fichier n’est associé à cette zone. Les copies de démonstration sont
+              simulées : elles n’ont pas d’image.
+            </p>
+          </div>
+        )}
 
         <dl className="mt-4 space-y-2 text-sm">
           <div className="flex justify-between">

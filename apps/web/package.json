@@ -19,6 +19,7 @@
     "@coteris/grading": "workspace:*",
     "@coteris/pipeline": "workspace:*",
     "@coteris/shared": "workspace:*",
+    "@coteris/storage": "workspace:*",
     "better-auth": "^1.2.0",
     "drizzle-orm": "^0.38.3",
     "next": "^15.1.4",

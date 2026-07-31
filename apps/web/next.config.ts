@@ -15,6 +15,7 @@ const config: NextConfig = {
     '@coteris/ai',
     '@coteris/grading',
     '@coteris/pipeline',
+    '@coteris/storage',
   ],
 
   typescript: {

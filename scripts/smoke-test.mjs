@@ -169,6 +169,39 @@ async function main() {
     'les propositions de note figurent au journal',
   )
 
+  // --- Service des fichiers -------------------------------------------------
+  console.log('\nService des fichiers de copies')
+
+  const cléFactice = `${idÉpreuve}/copies/page-1.png`
+
+  const sansSession = await fetch(`${BASE}/api/fichiers/${cléFactice}`, { redirect: 'manual' })
+  vérifier(
+    sansSession.status === 401,
+    'sans session, aucun fichier n’est servi',
+    `statut ${sansSession.status}`,
+  )
+
+  const sansJeton = await get(`/api/fichiers/${cléFactice}`)
+  vérifier(
+    sansJeton.statut === 403 || sansJeton.statut === 404,
+    'une session seule ne suffit pas : un jeton signé est exigé',
+    `statut ${sansJeton.statut}`,
+  )
+
+  const jetonForgé = await get(`/api/fichiers/${cléFactice}?jeton=9999999999.inventee`)
+  vérifier(
+    jetonForgé.statut === 403 || jetonForgé.statut === 404,
+    'un jeton forgé est refusé',
+    `statut ${jetonForgé.statut}`,
+  )
+
+  const remontée = await get('/api/fichiers/..%2F..%2F.env?jeton=1.x')
+  vérifier(
+    remontée.statut === 400 || remontée.statut === 404,
+    'une remontée de répertoire est refusée',
+    `statut ${remontée.statut}`,
+  )
+
   // --- Cloisonnement -----------------------------------------------------------
   console.log('\nCloisonnement des données')
 

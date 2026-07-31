@@ -26,13 +26,14 @@ Légende : ⬜ non commencé · 🟡 en cours · ✅ terminé et testé · ⛔ b
 | 6ter | Données de démonstration réelles | ✅ |
 | 7 | Interface web — lecture et correction | ✅ |
 | 8 | Validation humaine — actions câblées | ✅ |
-| 9 | Worker, stockage, imports, exports | ⬜ |
+| 9 | Stockage des fichiers | ✅ |
+| 10 | Worker, imports, exports | ⬜ |
 | 8+ | Approfondissement des phases | ⬜ |
 
-**Tests exécutés à ce jour : 222, tous verts.** Dernière exécution : 2026-07-31.
+**Tests exécutés à ce jour : 292, tous verts.** Dernière exécution : 2026-07-31.
 
 ```
-Unitaires — 210, sans aucune infrastructure
+Unitaires — 237, sans aucune infrastructure
   @coteris/shared    62  (millipoints 30, confiance 15, configuration 17)
   @coteris/grading   40  (moteur de barème)
   @coteris/database   9  (invariants de schéma)
@@ -40,9 +41,14 @@ Unitaires — 210, sans aucune infrastructure
   @coteris/auth      29  (matrice de permissions)
   @coteris/ai        42  (validation des sorties, coûts, fournisseur simulé)
   @coteris/pipeline  12  (chaîne complète OCR → analyse → points → confiance)
+  @coteris/storage   27  (clés, types réels, jetons d'accès)
 
 Intégration — 12, contre PostgreSQL 17 réel
   @coteris/audit     12  (verrous, détection d'altération, transactions)
+
+Bout en bout — 43, contre l'application et la base réelles
+  pnpm smoke         28  (parcours utilisateur, sécurité du service de fichiers)
+  pnpm verify:review 15  (validation humaine, audit, recalcul)
 ```
 
 ---
@@ -627,6 +633,69 @@ important — **la chaîne d'audit reste intègre après écriture**.
   pas encore exposés dans l'interface.
 - La modification d'une note finalisée est refusée plutôt que gérée : le
   versionnement de note reste à implémenter.
+
+---
+
+### Étape 9 — Stockage des fichiers — ✅
+
+**Deux pilotes, un seul chemin d'accès.**
+
+`local` (disque, défaut et cible mutualisée) et `s3` (MinIO, R2, Scaleway). Le
+choix est une variable d'environnement.
+
+Décision qui mérite d'être explicitée : **aucune URL pré-signée du fournisseur
+n'est remise au navigateur**, même en S3. Tous les fichiers passent par
+`/api/fichiers/…`. Un schéma d'accès unique vaut mieux que deux à maintenir, et
+il garantit que le contrôle de permission est traversé dans tous les cas.
+
+**Trois contrôles à chaque fichier servi, aucun facultatif**
+
+1. une session valide → sinon 401 ;
+2. la permission `submissionContent.read` → un administrateur technique ne l'a
+   pas, et reçoit **404 et non 403** : confirmer l'existence d'un fichier
+   renseignerait déjà quelqu'un qui n'a pas à le savoir ;
+3. un jeton signé, lié à la clé **et** à l'organisation, expirant.
+
+Le jeton seul ne suffirait pas — une URL copiée dans un courriel resterait
+exploitable. La session seule non plus — elle n'attache l'accès à aucun fichier
+précis.
+
+**Ce qui est refusé, et testé**
+
+| Attaque | Défense |
+|---|---|
+| `../../.env` dans la clé | Validation syntaxique **et** vérification du chemin résolu |
+| Exécutable renommé en `.png` | Type détecté aux octets d'en-tête, pas au nom ni au type déclaré |
+| SVG (peut contenir du script) | Hors des formats acceptés |
+| Jeton d'une autre copie | Lié à la clé |
+| Jeton d'une autre organisation | Lié à l'organisation |
+| Expiration rallongée dans le jeton | La date entre dans le HMAC |
+| Jeton forgé et périmé | Signalé « invalide », pas « expiré » — distinguer les deux renseignerait un attaquant |
+
+**Un détail d'ordre qui compte**
+
+La signature est vérifiée **avant** l'expiration. L'inverse permettrait de
+distinguer un jeton expiré d'un jeton forgé.
+
+**Fichiers importants**
+
+| Fichier | Contenu |
+|---|---|
+| `packages/storage/src/driver.ts` | Interface, validation des clés, détection du type réel |
+| `packages/storage/src/local.ts` | Pilote disque, double barrière anti-remontée |
+| `packages/storage/src/s3.ts` | Pilote compatible S3 |
+| `packages/storage/src/signing.ts` | Jetons d'accès HMAC |
+| `apps/web/src/app/api/fichiers/[...cle]/route.ts` | Service des fichiers |
+
+**Tests** : 27 unitaires + 4 vérifications de fumée sur la route réelle.
+
+**Limites connues**
+
+- **Les copies de démonstration n'ont pas d'image** : elles sont simulées, et je
+  n'en fabrique pas. La zone gauche l'indique explicitement plutôt que d'afficher
+  une illustration trompeuse. Les images apparaîtront dès l'implémentation de
+  l'import.
+- Rien n'écrit encore dans le stockage : l'import de copies reste à faire.
 
 ---
 

@@ -1,104 +1,97 @@
 # Résultats du banc d'essai
 
-## Aucune mesure n'a été effectuée
+## Mesure du 1er août 2026 — étalon lexical
 
-**Ce document ne contient aucun résultat, parce qu'aucune donnée réelle n'est
-disponible.**
-
-Le jeu d'évaluation — 150 à 200 copies anonymisées, 1 000 à 2 000 réponses
-courtes, barèmes validés et décisions humaines de référence — n'a pas été fourni.
-
-Le laboratoire est prêt : protocole, importateur, métriques testées, script
-d'exécution. Il attend des copies.
-
-Inventer des chiffres ici fausserait la décision la plus importante du projet —
-le choix du fournisseur d'OCR et d'analyse — et donnerait une confiance
-injustifiée dans un produit qui promet précisément l'inverse.
-
-## En attendant : une borne haute est possible dès maintenant
-
-Des réponses **saisies** — tapées plutôt que manuscrites — suffisent pour une
-première mesure. La transcription est alors parfaite par construction, ce qui
-isole l'étape d'identification des critères.
-
-Ce que cela permet :
-
-- **répondre à la question éliminatoire** — si les critères sont mal identifiés
-  sur du texte parfait, aucun OCR ne le rattrapera ;
-- **évaluer et implémenter un fournisseur d'analyse textuelle** sans dépendre de
-  copies manuscrites ;
-- établir la référence de comparaison pour, plus tard, chiffrer exactement ce que
-  la lecture manuscrite fait perdre.
-
-Ce que cela ne permet pas : **choisir un fournisseur d'OCR**. Le script le dit
-explicitement, et `permetDeChoisirUnOcr()` refuse tout rapport de cette portée.
-
-## Ce qui est prêt
-
-| Élément | État |
-|---|---|
-| [Protocole](benchmark-protocol.md) | ✅ |
-| Importateur avec refus des données personnelles | ✅ 25 tests |
-| Métriques (accord, précision, rappel, erreur, biais, verts, coûts) | ✅ testées |
-| `pnpm benchmark` | ✅ |
-| Pipeline **mock** (référence basse) | ✅ |
-| Pipeline **A** — OCR puis analyse textuelle | ⬜ |
-| Pipeline **B** — multimodal direct | ⬜ |
-| Pipeline **C** — hybride ciblé | ⬜ |
-
-Les pipelines A, B et C exigent un fournisseur réel. Le worker **refuse de
-démarrer** avec un fournisseur autre que simulé, tant que ce banc d'essai n'a pas
-tranché : choisir avant de mesurer serait exactement ce que le cahier des charges
-interdit.
-
-## Modèle de rapport
-
-À remplir lorsque les données seront disponibles. Un résultat sans ses conditions
-n'est pas un résultat.
+**Première mesure sur des données réelles.** Elle établit un plancher, pas une
+évaluation du produit : le pipeline mesuré est un étalon lexical volontairement
+rudimentaire, seul implémenté à ce jour.
 
 ### Conditions
 
 | | |
 |---|---|
-| Date | |
-| Jeu utilisé | |
-| Copies / réponses / critères | |
-| Accord entre correcteurs de référence | |
-| Fournisseur, modèle, version | |
-| Version du jeu de prompts | |
+| Date | 2026-08-01 |
+| Jeu | GSS4408 EC1 — Gestion d'un service de santé |
+| Copies | 13 |
+| Réponses | 208 (16 questions × 13 copies) |
+| Barème | 20 points — 9 QCM (8 pts), 7 questions ouvertes (12 pts) |
+| Moyenne humaine | 11,03 / 20 |
+| **Portée** | **Borne haute** — réponses saisies, transcription parfaite |
+| **Granularité de la référence** | **Par question** — le correcteur n'a pas détaillé par critère |
+| Accord entre correcteurs | **non mesuré** — un seul correcteur |
+| Pipeline | `mock` — correspondance lexicale, vocabulaire tiré du corrigé |
 
-### Résultats par pipeline
+### Résultats
 
-| Métrique | A | B | C |
-|---|---|---|---|
-| Accord IA-humain par critère | | | |
-| Précision de détection | | | |
-| Rappel de détection | | | |
-| Faux positifs | | | |
-| Faux négatifs | | | |
-| Erreur absolue moyenne | | | |
-| Biais | | | |
-| Erreur maximale | | | |
-| **Fiabilité des verts** | | | |
-| Taux de recours à l'humain | | | |
-| Coût par page | | | |
-| Coût par copie | | | |
-| Durée moyenne | | | |
+| Métrique | Valeur |
+|---|---|
+| Accord IA-humain | 24,0 % |
+| Précision de détection | 73,2 % |
+| Rappel de détection | 18,4 % |
+| Faux positifs | 11 |
+| Faux négatifs | 133 |
+| Erreur absolue moyenne | 0,680 pt |
+| Biais | **−0,384 pt** (systématiquement trop sévère) |
+| Erreur maximale | 2,000 pt |
+| Notes exactes | 24,0 % |
+| Cas verts / orange / rouges | 41 / 154 / 13 |
+| Recours à la validation humaine | 80,3 % |
+| **Fiabilité des verts** | **39,0 %** (25 des 41 cas verts corrigés par l'humain) |
 
-### Ventilation
+### Ce que ces chiffres disent
 
-Par qualité de scan (bonne / moyenne / mauvaise) et par style d'écriture
-(lisible / moyen / difficile). Un fournisseur excellent sur des scans nets et
-mauvais sur une écriture difficile n'est pas utilisable dans un examen réel, où
-les deux coexistent.
+**Le résultat le plus important est la fiabilité des verts : 39 %.**
 
-### Exemples d'échec
+Un cas vert est celui qu'un enseignant valide sans relire. Ici, **trois cas verts
+sur cinq sont faux**. Avec cet étalon, la validation groupée ne serait pas un
+gain de temps mais un accident : elle publierait des notes fausses sur des copies
+présentées comme sûres.
 
-Trois à cinq cas commentés, avec l'image, la transcription, la décision proposée
-et la décision humaine. Ce sont eux qui font comprendre où le système se trompe —
-plus qu'un taux agrégé.
+Deux conclusions concrètes :
 
-### Recommandation
+1. **La validation groupée doit rester désactivée** tant qu'un pipeline n'a pas
+   démontré une fiabilité des verts très supérieure — le seuil de 98 % fixé par le
+   protocole reste le bon.
+2. **Le calcul de confiance est mal calibré pour ce type de pipeline.** Il produit
+   du vert quand la correspondance lexicale est nette ; or la netteté d'une
+   correspondance lexicale n'implique pas la justesse de la décision. La confiance
+   ne doit pas être dérivée de la seule mécanique interne du pipeline.
 
-À rédiger après lecture des chiffres, en répondant explicitement aux trois
-questions du protocole : fiabilité des verts, coût par copie, gain de temps réel.
+Le reste est cohérent avec ce qu'on attend d'une approche lexicale : elle
+reconnaît ce qu'elle a en vocabulaire (précision 73 %) et rate presque tout le
+reste (rappel 18 %), d'où un biais négatif — elle est trop sévère, jamais trop
+généreuse.
+
+### Ce que ces chiffres ne disent pas
+
+- **Rien sur le choix d'un fournisseur d'OCR.** Les transcriptions étaient
+  parfaites. `permetDeChoisirUnOcr()` refuse ce rapport pour cet usage.
+- **Rien sur Coteris avec un vrai modèle.** L'étalon lexical est un plancher, pas
+  le produit.
+- **Rien de fin sur les critères.** Le correcteur a noté par question ; la
+  comparaison est donc faite sur les totaux. Répartir une note globale entre les
+  critères aurait fabriqué la référence à laquelle on se compare.
+
+### Limite méthodologique assumée
+
+Un seul correcteur a noté ces copies. **L'accord entre correcteurs n'est donc pas
+connu**, et c'est lui qui donne le plafond : si deux enseignants ne s'accordaient
+qu'à 80 %, un accord IA-humain de 78 % serait excellent et non médiocre.
+
+Faire double-noter trois ou quatre copies par un second correcteur reste le
+préalable à toute interprétation fine.
+
+## Ce qui reste à mesurer
+
+| Pipeline | État |
+|---|---|
+| `mock` — correspondance lexicale | ✅ mesuré, plancher établi |
+| **A** — OCR puis analyse textuelle | ⬜ exige un fournisseur réel |
+| **B** — multimodal direct | ⬜ exige un fournisseur réel et des copies manuscrites |
+| **C** — hybride ciblé | ⬜ n'a d'intérêt que si B dépasse nettement A |
+
+Le jeu est prêt et les références existent : implémenter un fournisseur
+d'analyse textuelle réel rendrait la mesure suivante immédiate.
+
+Restera hors de portée jusqu'à disposer de **copies manuscrites** : tout ce qui
+concerne la lecture, donc le choix de l'OCR et les pipelines B et C.

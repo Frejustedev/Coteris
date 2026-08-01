@@ -188,6 +188,40 @@ def extraire_reponse(page_texte: str) -> str | None:
     return normaliser(reponse) or None
 
 
+NOTE = re.compile(r"Note\s*:\s*(\d+(?:[,.]\d+)?)\s*/\s*(\d+(?:[,.]\d+)?)")
+COMMENTAIRE = re.compile(r"Correction\s*:\s*(.+?)(?=\nNote\s*:|\nHistorique)", re.S)
+
+
+def lire_corrections(chemin: Path) -> dict[int, dict]:
+    """
+    Extrait les décisions du correcteur d'une copie corrigée.
+
+    Les notes sont données **par question**, pas par critère. On les prend telles
+    quelles : répartir une note globale entre les critères serait une invention,
+    et cette invention deviendrait la référence à laquelle on compare le système.
+    """
+    décisions: dict[int, dict] = {}
+    entete = re.compile(r"Question (\d+)\.\s*\((\d+(?:[,.]\d+)?) pts?\)")
+
+    with pdfplumber.open(chemin) as pdf:
+        for page in pdf.pages:
+            texte = page.extract_text() or ""
+            marques = list(entete.finditer(texte))
+            for i, m in enumerate(marques):
+                fin = marques[i + 1].start() if i + 1 < len(marques) else len(texte)
+                bloc = texte[m.start() : fin]
+                n = NOTE.search(bloc)
+                if not n:
+                    continue
+                c = COMMENTAIRE.search(bloc)
+                décisions[int(m.group(1))] = {
+                    "obtenu": points_en_millimes(n.group(1)),
+                    "bareme": points_en_millimes(n.group(2)),
+                    "commentaire": normaliser(c.group(1)) if c else "",
+                }
+    return décisions
+
+
 def lire_copie(chemin: Path) -> dict[int, dict]:
     """
     Extrait les réponses d'une copie.
@@ -229,6 +263,50 @@ def lire_copie(chemin: Path) -> dict[int, dict]:
 # --- Assemblage ---------------------------------------------------------------
 
 
+def formulations_acceptables(corps: str) -> list[str]:
+    """
+    Extrait du corrigé les formulations qu'un étalon lexical peut chercher.
+
+    On prend le début de chaque puce d'attendu — en général le concept clé —
+    plutôt que la puce entière, qu'une réponse d'étudiant ne reproduira jamais
+    mot pour mot.
+
+    Cet étalon reste rudimentaire. Son intérêt n'est pas d'être bon, mais d'être
+    **équitablement** rudimentaire : un étalon privé de vocabulaire donnerait un
+    zéro qui flatterait n'importe quel vrai fournisseur par comparaison.
+    """
+    formulations: list[str] = []
+
+    for puce in re.findall(r"•\s*([^\n]{10,300})", corps):
+        puce = puce.strip()
+        # « Argument SÉCURITÉ : la maintenance… » → on garde ce qui suit le « : ».
+        if " : " in puce:
+            puce = puce.split(" : ", 1)[1]
+        # Première proposition, tronquée à quelques mots.
+        segment = re.split(r"[.;(]", puce)[0].strip()
+        mots = segment.split()
+        if 2 <= len(mots) <= 8:
+            formulations.append(" ".join(mots))
+        elif len(mots) > 8:
+            formulations.append(" ".join(mots[:6]))
+
+    # Termes en capitales du corrigé : PODC, PDCA, DMS, Donabedian…
+    for sigle in re.findall(r"\b([A-ZÉÈÀ]{3,12})\b", corps):
+        if sigle not in {"QROC", "EXERCICE", "QCM", "TOTAL"} and sigle not in formulations:
+            formulations.append(sigle)
+
+    # Dédoublonnage en conservant l'ordre.
+    vus: set[str] = set()
+    uniques = []
+    for f in formulations:
+        clé = f.lower()
+        if clé not in vus:
+            vus.add(clé)
+            uniques.append(f)
+
+    return uniques[:25]
+
+
 def identifiant(*parties: str) -> str:
     brut = "-".join(parties)
     brut = unicodedata.normalize("NFD", brut)
@@ -236,15 +314,25 @@ def identifiant(*parties: str) -> str:
     return re.sub(r"[^a-zA-Z0-9]+", "-", brut).strip("-").lower()[:64]
 
 
-def construire(copies_dir: Path, corrige_path: Path) -> tuple[dict, list[dict]]:
+def construire(
+    copies_dir: Path, corrige_path: Path, corrections_dir: Path | None
+) -> tuple[dict, list[dict]]:
     corrige = decouper_corrige(texte_docx(corrige_path))
     fichiers = sorted(copies_dir.glob("Copie *.pdf"))
 
     reponses_jeu = []
     a_noter = []
+    sans_note = 0
 
     for fichier in fichiers:
         code = identifiant(fichier.stem)
+
+        corrections: dict[int, dict] = {}
+        if corrections_dir:
+            corrigee = corrections_dir / fichier.name
+            if corrigee.exists():
+                corrections = lire_corrections(corrigee)
+
         for numero, donnees in sorted(lire_copie(fichier).items()):
             reference = corrige.get(numero)
             if reference is None:
@@ -265,15 +353,23 @@ def construire(copies_dir: Path, corrige_path: Path) -> tuple[dict, list[dict]]:
                         {"label": "Réponse attendue", "maxPoints": reference["maxPoints"]}
                     ]
 
+            vocabulaire = formulations_acceptables(reference["corps"])
             criteres = [
                 {
                     "id": identifiant(f"q{numero}", e["label"][:30], str(i)),
                     "label": e["label"],
                     "maxPoints": e["maxPoints"],
-                    "acceptableAnswers": [],
+                    # Vocabulaire tiré du corrigé. Sans lui, un étalon lexical ne
+                    # trouve rien par construction, et le chiffre obtenu ne
+                    # mesurerait que ce handicap.
+                    "acceptableAnswers": vocabulaire,
                 }
                 for i, e in enumerate(elements)
             ]
+
+            correction = corrections.get(numero)
+            if correction is None:
+                sans_note += 1
 
             reponses_jeu.append(
                 {
@@ -286,33 +382,39 @@ def construire(copies_dir: Path, corrige_path: Path) -> tuple[dict, list[dict]]:
                     # Réponses tapées : transcription parfaite par construction.
                     "origineTranscription": "saisie",
                     "critères": criteres,
-                    # VIDE : aucune décision humaine n'existe dans les fichiers.
+                    # Le correcteur a noté la question globalement, pas critère par
+                    # critère. On l'annonce plutôt que de répartir arbitrairement.
+                    "niveauRéférence": "question",
                     "décisionsRéférence": [],
-                    "totalRéférence": 0,
+                    "totalRéférence": correction["obtenu"] if correction else 0,
+                    "commentaireCorrecteur": correction["commentaire"] if correction else "",
                     "pointsMax": reference["maxPoints"],
                 }
             )
 
-            for critere in criteres:
-                a_noter.append(
-                    {
-                        "copie": code,
-                        "question": f"q{numero}",
-                        "critere_id": critere["id"],
-                        "critere": critere["label"],
-                        "points_max": critere["maxPoints"] / 1000,
-                        "reponse_etudiant": donnees["reponse"][:400],
-                        "etat": "",
-                        "points_accordes": "",
-                    }
-                )
+            if correction is None:
+                for critere in criteres:
+                    a_noter.append(
+                        {
+                            "copie": code,
+                            "question": f"q{numero}",
+                            "critere_id": critere["id"],
+                            "critere": critere["label"],
+                            "points_max": critere["maxPoints"] / 1000,
+                            "reponse_etudiant": donnees["reponse"][:400],
+                            "etat": "",
+                            "points_accordes": "",
+                        }
+                    )
 
+    noté = len(reponses_jeu) - sans_note
     jeu = {
         "version": 1,
         "description": (
             "GSS4408 EC1 — Gestion d'un service de santé. "
-            f"{len(fichiers)} copies, réponses saisies. "
-            "DÉCISIONS DE RÉFÉRENCE ABSENTES : à compléter avant toute mesure."
+            f"{len(fichiers)} copies, réponses saisies, "
+            f"{noté}/{len(reponses_jeu)} réponses notées par un correcteur humain. "
+            "Références au niveau de la question."
         ),
         "réponses": reponses_jeu,
     }
@@ -324,11 +426,17 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--copies", required=True)
     parser.add_argument("--corrige", required=True)
+    parser.add_argument("--corrections", default=None,
+                        help="Répertoire des copies corrigées, portant les notes du correcteur")
     parser.add_argument("--sortie", required=True)
     parser.add_argument("--feuille", required=True)
     args = parser.parse_args()
 
-    jeu, a_noter = construire(Path(args.copies), Path(args.corrige))
+    jeu, a_noter = construire(
+        Path(args.copies),
+        Path(args.corrige),
+        Path(args.corrections) if args.corrections else None,
+    )
 
     Path(args.sortie).write_text(
         json.dumps(jeu, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -356,14 +464,25 @@ def main() -> None:
     questions = len({r["questionId"] for r in jeu["réponses"]})
     vides = sum(1 for r in jeu["réponses"] if not r["transcriptionRéférence"])
 
+    notées = sum(1 for r in jeu["réponses"] if r["commentaireCorrecteur"] or r["totalRéférence"])
+    obtenu = sum(r["totalRéférence"] for r in jeu["réponses"])
+    bareme = sum(r["pointsMax"] for r in jeu["réponses"])
+
     print(f"\nJeu écrit    : {args.sortie}")
     print(f"  copies     : {copies}")
     print(f"  questions  : {questions}")
-    print(f"  réponses   : {len(jeu['réponses'])}  (dont {vides} vides)")
-    print(f"  critères   : {len(a_noter)}")
-    print(f"\nFeuille de notation : {args.feuille}")
-    print("  À remplir : colonnes « etat » (present/partial/absent) et « points_accordes ».")
-    print("\nAucune décision de référence n'a été inventée. Sans elles, aucune mesure.")
+    print(f"  réponses   : {len(jeu['réponses'])}  (dont {vides} sans réponse d'étudiant)")
+    print(f"  notées     : {notées} par un correcteur humain")
+    print(f"  moyenne    : {obtenu / copies / 1000:.2f} / {bareme / copies / 1000:.0f}")
+    print("\n  Références au niveau de la QUESTION : le correcteur n'a pas détaillé par")
+    print("  critère. Répartir une note globale entre les critères serait une invention,")
+    print("  et cette invention deviendrait la référence. On s'en abstient.")
+
+    if a_noter:
+        print(f"\nFeuille de notation : {args.feuille}  ({len(a_noter)} critères sans décision)")
+        print("  À remplir : colonnes « etat » (present/partial/absent) et « points_accordes ».")
+    else:
+        print("\nToutes les réponses sont notées : aucune feuille à remplir.")
 
 
 if __name__ == "__main__":

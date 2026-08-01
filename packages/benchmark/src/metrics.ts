@@ -263,10 +263,30 @@ export const PORTÉE_LABELS: Record<PortéeMesure, string> = {
   mixte: 'MIXTE — le jeu mélange manuscrit et saisie, chiffres non interprétables',
 }
 
+/**
+ * Finesse de la décision humaine à laquelle on se compare.
+ *
+ * `critère` : le correcteur s'est prononcé critère par critère. Précision et
+ * rappel de détection sont alors interprétables.
+ *
+ * `question` : le correcteur a mis une note globale. On compare donc des totaux.
+ * Précision et rappel restent calculables, mais à la granularité de la
+ * question — « le système a-t-il accordé des points là où l'humain en a
+ * accordé ? » — et non du critère. C'est plus grossier, et il faut le dire.
+ */
+export type Granularité = 'critère' | 'question'
+
+export const GRANULARITÉ_LABELS: Record<Granularité, string> = {
+  critère: 'par critère',
+  question: 'par question (le correcteur n’a pas détaillé)',
+}
+
 export interface RapportPipeline {
   readonly pipeline: string
   /** Ce que ces chiffres mesurent réellement. */
   readonly portée: PortéeMesure
+  /** À quelle finesse la comparaison est faite. */
+  readonly granularité: Granularité
   readonly effectifRéponses: number
   readonly effectifCritères: number
   readonly accord: AccordParCritère
@@ -297,12 +317,14 @@ export function évaluer(
   pipeline: string,
   observations: readonly ObservationRéponse[],
   portée: PortéeMesure = 'chaine_complete',
+  granularité: Granularité = 'critère',
 ): RapportPipeline {
   const critères = observations.flatMap((o) => o.critères)
 
   return {
     pipeline,
     portée,
+    granularité,
     effectifRéponses: observations.length,
     effectifCritères: critères.length,
     accord: accordParCritère(critères),

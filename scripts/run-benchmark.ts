@@ -19,7 +19,9 @@ import {
   parseDataset,
   permetDeChoisirUnOcr,
   portéeDuJeu,
+  GRANULARITÉ_LABELS,
   PORTÉE_LABELS,
+  type Granularité,
   évaluer,
   type ObservationCritère,
   type ObservationRéponse,
@@ -148,25 +150,7 @@ async function évaluerRéponse(
   )
   const duréeMs = Date.now() - début
 
-  type Référence = RéponseÉvaluation['décisionsRéférence'][number]
-  const référenceParCritère = new Map<string, Référence>(
-    réponse.décisionsRéférence.map((d): [string, Référence] => [versUuid(d.criterionId), d]),
-  )
-  // On garde le chemin inverse pour que les rapports d'erreur citent
-  // l'identifiant lisible du jeu, pas l'UUID interne.
-  const lisibleParUuid = new Map(réponse.critères.map((c) => [versUuid(c.id), c.id]))
-
-  const observations: ObservationCritère[] = résultat.outcome.criteria.map((c) => {
-    const référence = référenceParCritère.get(c.criterionId as string)
-    return {
-      criterionId: lisibleParUuid.get(c.criterionId as string) ?? (c.criterionId as string),
-      proposé: c.status,
-      référence: référence?.référence ?? 'absent',
-      pointsProposés: c.pointsComputed,
-      pointsRéférence: référence?.pointsRéférence ?? 0,
-      niveauConfiance: résultat.confidenceLevel,
-    }
-  })
+  const observations = construireObservations(réponse, résultat)
 
   return {
     submissionId: réponse.submissionId,
@@ -183,6 +167,59 @@ async function évaluerRéponse(
     coûtMicroEur: 0,
     pages: 1,
   }
+}
+
+/** Déduit un état à partir de points obtenus sur un maximum. */
+function étatDepuisPoints(points: number, max: number): 'present' | 'partial' | 'absent' {
+  if (points <= 0) return 'absent'
+  if (points >= max) return 'present'
+  return 'partial'
+}
+
+/**
+ * Construit les observations comparables, selon la finesse de la référence.
+ *
+ * Quand le correcteur n'a mis qu'une note globale à la question, on ne peut pas
+ * comparer critère par critère : on compare les **totaux**, en traitant la
+ * question comme une seule observation. Répartir la note entre les critères
+ * pour obtenir une comparaison plus fine reviendrait à inventer la référence.
+ */
+function construireObservations(
+  réponse: RéponseÉvaluation,
+  résultat: Awaited<ReturnType<typeof gradeAnswer>>,
+): ObservationCritère[] {
+  if (réponse.niveauRéférence === 'question') {
+    return [
+      {
+        criterionId: réponse.questionId,
+        proposé: étatDepuisPoints(résultat.outcome.total, réponse.pointsMax),
+        référence: étatDepuisPoints(réponse.totalRéférence, réponse.pointsMax),
+        pointsProposés: résultat.outcome.total,
+        pointsRéférence: réponse.totalRéférence,
+        niveauConfiance: résultat.confidenceLevel,
+      },
+    ]
+  }
+
+  type Référence = RéponseÉvaluation['décisionsRéférence'][number]
+  const parCritère = new Map<string, Référence>(
+    réponse.décisionsRéférence.map((d): [string, Référence] => [versUuid(d.criterionId), d]),
+  )
+  // Chemin inverse : les rapports d'erreur citent l'identifiant lisible du jeu,
+  // pas l'UUID interne.
+  const lisible = new Map(réponse.critères.map((c) => [versUuid(c.id), c.id]))
+
+  return résultat.outcome.criteria.map((c) => {
+    const référence = parCritère.get(c.criterionId as string)
+    return {
+      criterionId: lisible.get(c.criterionId as string) ?? (c.criterionId as string),
+      proposé: c.status,
+      référence: référence?.référence ?? 'absent',
+      pointsProposés: c.pointsComputed,
+      pointsRéférence: référence?.pointsRéférence ?? 0,
+      niveauConfiance: résultat.confidenceLevel,
+    }
+  })
 }
 
 function pourcent(v: number): string {
@@ -279,9 +316,16 @@ fausserait la décision la plus importante du projet, celle du fournisseur.
 
   const portée = portéeDuJeu(jeu.réponses.map((r) => r.origineTranscription))
 
+  // Un jeu mélangeant les deux finesses de référence n'est pas comparable :
+  // on retient la plus grossière, qui est celle qui limite l'interprétation.
+  const granularité: Granularité = jeu.réponses.some((r) => r.niveauRéférence === 'question')
+    ? 'question'
+    : 'critère'
+
   console.log(`\nJeu : ${jeu.description}`)
   console.log(`Réponses : ${jeu.réponses.length}`)
   console.log(`Portée : ${PORTÉE_LABELS[portée]}`)
+  console.log(`Comparaison : ${GRANULARITÉ_LABELS[granularité]}`)
 
   const demandé = argument('pipeline')
   const àÉvaluer = demandé ? [demandé] : Object.keys(PIPELINES)
@@ -300,7 +344,7 @@ fausserait la décision la plus importante du projet, celle du fournisseur.
       observations.push(await évaluerRéponse(réponse, analyzer))
     }
 
-    afficher(évaluer(nom, observations, portée))
+    afficher(évaluer(nom, observations, portée, granularité))
   }
 
   console.log(

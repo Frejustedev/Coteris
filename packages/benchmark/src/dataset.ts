@@ -46,8 +46,22 @@ export const réponseÉvaluationSchema = z.object({
       }),
     )
     .min(1),
-  décisionsRéférence: z.array(critèreRéférence).min(1),
+  /**
+   * Granularité de la décision humaine disponible.
+   *
+   * `critère` : le correcteur s'est prononcé critère par critère. C'est le plus
+   * riche — il permet de mesurer précision et rappel de détection.
+   *
+   * `question` : le correcteur a mis une note globale à la question, sans
+   * détailler. C'est le cas le plus courant en pratique. On peut alors mesurer
+   * l'erreur de note et la fiabilité des cas verts, **mais pas** l'accord par
+   * critère : répartir une note globale entre les critères serait une invention.
+   */
+  niveauRéférence: z.enum(['critère', 'question']).default('critère'),
+  décisionsRéférence: z.array(critèreRéférence),
   totalRéférence: z.number().int(),
+  /** Commentaire du correcteur, quand il existe. Précieux pour analyser les échecs. */
+  commentaireCorrecteur: z.string().optional(),
   pointsMax: z.number().int().min(1),
   /** Qualité du scan, pour ventiler les résultats. */
   qualitéScan: z.enum(['bonne', 'moyenne', 'mauvaise']).default('bonne'),
@@ -182,35 +196,52 @@ export function parseDataset(brut: unknown): JeuÉvaluation {
   for (const réponse of analyse.data.réponses) {
     const connus = new Set(réponse.critères.map((c) => c.id))
 
-    for (const d of réponse.décisionsRéférence) {
-      if (!connus.has(d.criterionId)) {
+    if (réponse.niveauRéférence === 'critère') {
+      if (réponse.décisionsRéférence.length === 0) {
         problèmes.push(
-          `réponse ${réponse.id} : la décision porte sur le critère ${d.criterionId}, ` +
-            `absent du barème.`,
+          `réponse ${réponse.id} : niveau « critère » annoncé mais aucune décision fournie.`,
         )
       }
-    }
 
-    const manquants = [...connus].filter(
-      (id) => !réponse.décisionsRéférence.some((d) => d.criterionId === id),
-    )
-    if (manquants.length > 0) {
-      problèmes.push(
-        `réponse ${réponse.id} : ${manquants.length} critère(s) sans décision de référence. ` +
-          `Une référence incomplète fausserait le rappel.`,
+      for (const d of réponse.décisionsRéférence) {
+        if (!connus.has(d.criterionId)) {
+          problèmes.push(
+            `réponse ${réponse.id} : la décision porte sur le critère ${d.criterionId}, ` +
+              `absent du barème.`,
+          )
+        }
+      }
+
+      const manquants = [...connus].filter(
+        (id) => !réponse.décisionsRéférence.some((d) => d.criterionId === id),
       )
-    }
+      if (manquants.length > 0) {
+        problèmes.push(
+          `réponse ${réponse.id} : ${manquants.length} critère(s) sans décision de ` +
+            `référence. Une référence incomplète fausserait le rappel.`,
+        )
+      }
 
-    const somme = réponse.décisionsRéférence.reduce((s, d) => s + d.pointsRéférence, 0)
-    if (somme !== réponse.totalRéférence) {
+      const somme = réponse.décisionsRéférence.reduce((s, d) => s + d.pointsRéférence, 0)
+      if (somme !== réponse.totalRéférence) {
+        problèmes.push(
+          `réponse ${réponse.id} : le total de référence (${réponse.totalRéférence}) ne ` +
+            `correspond pas à la somme des critères (${somme}).`,
+        )
+      }
+    } else if (réponse.décisionsRéférence.length > 0) {
+      // Mieux vaut refuser que laisser croire à une richesse qui n'existe pas.
       problèmes.push(
-        `réponse ${réponse.id} : le total de référence (${réponse.totalRéférence}) ne ` +
-          `correspond pas à la somme des critères (${somme}).`,
+        `réponse ${réponse.id} : niveau « question » annoncé, mais des décisions par ` +
+          `critère sont fournies. Choisissez l'un ou l'autre.`,
       )
     }
 
     if (réponse.totalRéférence > réponse.pointsMax) {
       problèmes.push(`réponse ${réponse.id} : le total de référence dépasse le barème.`)
+    }
+    if (réponse.totalRéférence < 0) {
+      problèmes.push(`réponse ${réponse.id} : total de référence négatif.`)
     }
   }
 

@@ -37,6 +37,24 @@ function vérifier(condition, message, détail) {
   else ko(message, détail)
 }
 
+/**
+ * Identifiant de l'épreuve de démonstration dans la page du tableau de bord.
+ *
+ * On repère le titre, puis le lien qui le précède immédiatement : c'est celui de
+ * sa carte.
+ */
+function trouverÉpreuveDémo(html) {
+  const positionTitre = html.indexOf('Médecine nucléaire')
+  if (positionTitre === -1) return undefined
+
+  let candidat
+  for (const m of html.matchAll(/\/epreuves\/([0-9a-f-]{36})/g)) {
+    if (m.index !== undefined && m.index < positionTitre) candidat = m[1]
+    else break
+  }
+  return candidat
+}
+
 async function get(chemin) {
   const réponse = await fetch(`${BASE}${chemin}`, {
     headers: cookies ? { cookie: cookies } : {},
@@ -106,12 +124,26 @@ async function main() {
     'l’organisation de l’utilisateur est affichée',
   )
   vérifier(tableau.corps.includes('Coordonnateur'), 'le rôle est affiché')
+  vérifier(
+    tableau.corps.includes('/epreuves/nouvelle'),
+    'un coordonnateur peut créer une épreuve depuis le tableau de bord',
+  )
+
+  const création = await get('/epreuves/nouvelle')
+  vérifier(création.statut === 200, 'la page de création répond', `statut ${création.statut}`)
+  vérifier(
+    création.corps.includes('Note maximale'),
+    'le formulaire de création est rendu',
+  )
 
   // --- Épreuve ----------------------------------------------------------------
   console.log('\nÉpreuve')
 
-  const idÉpreuve = tableau.corps.match(/\/epreuves\/([0-9a-f-]{36})/)?.[1]
-  vérifier(Boolean(idÉpreuve), 'un lien vers l’épreuve est présent')
+  // On vise l'épreuve de démonstration, et non la première venue : d'autres
+  // épreuves peuvent exister, et une épreuve sans copies ferait échouer les
+  // vérifications suivantes pour une mauvaise raison.
+  const idÉpreuve = trouverÉpreuveDémo(tableau.corps)
+  vérifier(Boolean(idÉpreuve), 'un lien vers l’épreuve de démonstration est présent')
   if (!idÉpreuve) return
 
   const épreuve = await get(`/epreuves/${idÉpreuve}`)

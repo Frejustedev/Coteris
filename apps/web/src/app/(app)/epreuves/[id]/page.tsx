@@ -8,6 +8,7 @@ import { can } from '@coteris/auth'
 import {
   getAssessment,
   getAssessmentStats,
+  isRubricLocked,
   listExports,
   listQuestions,
   listSubmissions,
@@ -15,6 +16,7 @@ import {
 import { requireUser } from '~/lib/session'
 import { PanneauExports } from './exports'
 import { PanneauImport } from './import'
+import { PanneauPréparation } from './preparation'
 
 export const metadata: Metadata = { title: 'Épreuve' }
 
@@ -27,12 +29,15 @@ export default async function ÉpreuvePage({ params }: { params: Promise<{ id: s
   const épreuve = await getAssessment(principal.organizationId, id)
   if (!épreuve) notFound()
 
-  const [questions, copies, stats, exports] = await Promise.all([
+  const [questions, copies, stats, exports, verrouillé] = await Promise.all([
     listQuestions(principal.organizationId, id),
     listSubmissions(principal.organizationId, id),
     getAssessmentStats(principal.organizationId, id),
     listExports(principal.organizationId, id),
+    isRubricLocked(principal.organizationId, id),
   ])
+
+  const totalQuestions = questions.reduce((s, q) => s + q.maxPoints, 0)
 
   return (
     <div className="space-y-6">
@@ -134,12 +139,25 @@ export default async function ÉpreuvePage({ params }: { params: Promise<{ id: s
         )}
       </Carte>
 
-      <Carte titre="Importer des copies">
-        <PanneauImport
-          assessmentId={id}
-          peutImporter={can(principal, 'submission', 'create')}
-        />
-      </Carte>
+      {verrouillé ? (
+        <Carte titre="Importer des copies">
+          <PanneauImport
+            assessmentId={id}
+            peutImporter={can(principal, 'submission', 'create')}
+          />
+        </Carte>
+      ) : (
+        <Carte titre="Préparation — questions, corrigé et barème">
+          <PanneauPréparation
+            assessmentId={id}
+            peutModifier={can(principal, 'assessment', 'update')}
+            peutVerrouiller={can(principal, 'rubric', 'lock')}
+            nombreQuestions={questions.length}
+            totalQuestions={totalQuestions}
+            noteMax={épreuve.maxPoints}
+          />
+        </Carte>
+      )}
 
       <Carte titre="Exports">
         <PanneauExports

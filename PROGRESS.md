@@ -31,10 +31,11 @@ Légende : ⬜ non commencé · 🟡 en cours · ✅ terminé et testé · ⛔ b
 | 11 | Exports CSV et rapport d'audit | ✅ |
 | 12 | Import de copies | ✅ |
 | 13 | Laboratoire de banc d'essai (phase 0) | ✅ |
-| 14 | Segmentation réelle, fournisseurs d'IA, PDF corrigé | ⬜ |
+| 14 | Préparation d'épreuve depuis l'interface | ✅ |
+| 15 | Segmentation réelle, fournisseurs d'IA, PDF corrigé | ⬜ |
 | 8+ | Approfondissement des phases | ⬜ |
 
-**Tests exécutés à ce jour : 408, tous verts.** Dernière exécution : 2026-08-01.
+**Tests exécutés à ce jour : 434, tous verts.** Dernière exécution : 2026-08-01.
 
 ```
 Unitaires — 303, sans aucune infrastructure
@@ -53,12 +54,13 @@ Unitaires — 303, sans aucune infrastructure
 Intégration — 12, contre PostgreSQL 17 réel
   @coteris/audit     12  (verrous, détection d'altération, transactions)
 
-Bout en bout — 93, contre l'application, la base, le worker et le stockage réels
-  pnpm smoke          28  (parcours utilisateur, sécurité du service de fichiers)
-  pnpm verify:review  15  (validation humaine, audit, recalcul)
-  pnpm verify:worker  12  (file transactionnelle, traitement, audit)
-  pnpm verify:exports 17  (permissions, contenu, format, traçabilité)
-  pnpm verify:import  21  (refus, stockage, zones, file, traitement, doublon)
+Bout en bout — 119, contre l'application, la base, le worker et le stockage réels
+  pnpm smoke             31  (parcours utilisateur, sécurité du service de fichiers)
+  pnpm verify:review     15  (validation humaine, audit, recalcul)
+  pnpm verify:worker     12  (file transactionnelle, traitement, audit)
+  pnpm verify:exports    17  (permissions, contenu, format, traçabilité)
+  pnpm verify:import     21  (refus, stockage, zones, file, traitement, doublon)
+  pnpm verify:assessment 23  (création, cohérence, verrouillage, immuabilité)
 ```
 
 ---
@@ -952,6 +954,72 @@ le compare. Sans cette étape, un accord IA-humain de 85 % est ininterprétable.
   fournisseur réel — dont le choix est précisément ce que ce banc d'essai doit
   éclairer. Les déclarer implémentés serait mentir sur ce qui est mesurable.
 - Aucune donnée réelle. `docs/benchmark-results.md` le dit sans détour.
+
+---
+
+### Étape 14 — Préparation d'épreuve — ✅
+
+**Un enseignant qui s'inscrit peut désormais faire quelque chose.** Jusqu'ici, il
+arrivait sur un tableau de bord vide sans aucune action possible : seul le seed
+savait créer une épreuve.
+
+Le parcours complet du cahier des charges existe maintenant de bout en bout :
+
+```
+créer un compte → espace individuel → créer une épreuve → ajouter questions,
+corrigé et critères → verrouiller le barème → importer des copies →
+propositions avec preuves → valider ou modifier → exporter
+```
+
+**Le verrouillage refuse un barème incohérent**
+
+C'est le moment décisif du produit : avant, tout se modifie ; après, plus rien.
+Le service refuse donc de verrouiller si :
+
+- l'épreuve ne comporte aucune question ;
+- une question n'a aucun critère — elle ne serait jamais corrigeable ;
+- la somme des critères ne fait pas le barème de sa question ;
+- le total des questions ne fait pas la note maximale de l'épreuve.
+
+**Tous les problèmes sont rendus d'un coup**, pas un par un : corriger un barème
+une erreur à la fois est une perte de temps.
+
+Découvrir au milieu d'une session de correction que le total ne tombe pas juste
+serait bien pire qu'un refus explicite ici.
+
+**Ce que le verrouillage produit**
+
+Versions figées du sujet, du corrigé et du barème, chacune avec son empreinte de
+contenu, son signataire et sa date. Les questions sont rattachées à la version
+figée du sujet. L'épreuve passe à `READY_FOR_SUBMISSIONS`. Deux événements
+d'audit : validation du corrigé, verrouillage du barème.
+
+**Après verrouillage, toute modification est refusée** — elle exigerait une
+nouvelle version, non encore implémentée. Refuser explicitement vaut mieux que
+laisser un barème officiel changer sans trace.
+
+**Un défaut de mes propres scripts, corrigé**
+
+`verify:assessment` écrivait dans l'organisation de démonstration. Les épreuves
+qu'il y créait n'ayant pas de copies, le test de fumée finissait par tomber sur
+l'une d'elles et échouait pour une mauvaise raison. Le script crée désormais sa
+propre organisation : **une vérification ne doit pas dégrader le jeu qu'elle
+partage.** Le test de fumée vise en outre explicitement l'épreuve de
+démonstration, et non la première venue.
+
+**Tests** : 23 vérifications contre la base réelle, du refus initial jusqu'à
+l'immuabilité après verrouillage.
+
+**Limites connues**
+
+- Pas d'import de sujet (PDF, DOCX) ni de découpage automatique des questions :
+  l'énoncé se saisit à la main.
+- Pas de structuration du corrigé par l'IA : les critères se saisissent à la main.
+  C'est cohérent avec le cahier des charges, qui interdit d'adopter un corrigé
+  généré sans validation — mais l'aide à la structuration reste à faire.
+- Une seule forme d'attribution exposée dans l'interface (tout ou rien) ; le
+  moteur en gère six.
+- Pas de modification ni de suppression de question avant verrouillage.
 
 ---
 

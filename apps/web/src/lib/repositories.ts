@@ -79,6 +79,23 @@ export async function getAssessment(organizationId: string, assessmentId: string
   return row ?? null
 }
 
+/** Vrai si un barème verrouillé existe : la préparation est alors close. */
+export async function isRubricLocked(
+  organizationId: string,
+  assessmentId: string,
+): Promise<boolean> {
+  const lignes = (await db.execute(sql`
+    SELECT 1 FROM rubrics r
+    JOIN rubric_versions rv ON rv.rubric_id = r.id
+    WHERE r.assessment_id = ${assessmentId}::uuid
+      AND r.organization_id = ${organizationId}::uuid
+      AND rv.locked_at IS NOT NULL
+    LIMIT 1
+  `)) as unknown as unknown[]
+
+  return lignes.length > 0
+}
+
 export async function listQuestions(organizationId: string, assessmentId: string) {
   return db
     .select()

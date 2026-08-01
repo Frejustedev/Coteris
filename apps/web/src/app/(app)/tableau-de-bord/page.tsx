@@ -30,16 +30,25 @@ export default async function TableauDeBord() {
         {/* Le bouton est masqué si le rôle ne l'autorise pas — et le serveur
             refuserait de toute façon l'action. L'interface cache, le serveur interdit. */}
         {peutCréer && (
-          <span className="rounded-md border border-dashed border-marine-100 px-3 py-1.5 text-xs text-anthracite-400">
-            Création d’épreuve : à venir
-          </span>
+          <Link
+            href="/epreuves/nouvelle"
+            className="shrink-0 rounded-md bg-marine-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-marine-600"
+          >
+            Nouvelle épreuve
+          </Link>
         )}
       </div>
 
       {épreuves.length === 0 ? (
         <Vide>
-          Aucune épreuve n’a encore été créée. Chargez les données de démonstration avec{' '}
-          <code className="tabulaire">pnpm db:seed</code>.
+          Aucune épreuve pour le moment.{' '}
+          {peutCréer ? (
+            <Link href="/epreuves/nouvelle" className="text-marine-700 underline underline-offset-2">
+              Créez votre première épreuve
+            </Link>
+          ) : (
+            'Votre coordonnateur doit en créer une.'
+          )}
         </Vide>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">

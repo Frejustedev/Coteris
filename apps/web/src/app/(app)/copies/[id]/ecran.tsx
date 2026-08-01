@@ -169,7 +169,7 @@ export function ÉcranCorrection({
 
       {/* Trois zones */}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1.2fr)]">
-        <ZoneCopie question={question} code={copie.anonymousCode} />
+        <ZoneCopie question={question} code={copie.anonymousCode} submissionId={copie.id} />
         <ZoneRéponse question={question} extraitsSurlignés={extraitsSurlignés} />
         <ZoneNotation
           question={question}
@@ -190,7 +190,15 @@ export function ÉcranCorrection({
 
 // --- Zone gauche : la copie ---------------------------------------------------
 
-function ZoneCopie({ question, code }: { question: QuestionAffichée; code: string }) {
+function ZoneCopie({
+  question,
+  code,
+  submissionId,
+}: {
+  question: QuestionAffichée
+  code: string
+  submissionId: string
+}) {
   const [zoom, setZoom] = useState(1)
 
   return (
@@ -259,6 +267,13 @@ function ZoneCopie({ question, code }: { question: QuestionAffichée; code: stri
             </dd>
           </div>
         </dl>
+
+        <Link
+          href={`/copies/${submissionId}/zones`}
+          className="mt-3 block rounded-md border border-marine-100 px-3 py-2 text-center text-xs text-anthracite-600 transition hover:bg-marine-50"
+        >
+          Vérifier le découpage des zones
+        </Link>
       </div>
     </section>
   )

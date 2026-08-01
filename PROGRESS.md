@@ -32,10 +32,11 @@ Légende : ⬜ non commencé · 🟡 en cours · ✅ terminé et testé · ⛔ b
 | 12 | Import de copies | ✅ |
 | 13 | Laboratoire de banc d'essai (phase 0) | ✅ |
 | 14 | Préparation d'épreuve depuis l'interface | ✅ |
-| 15 | Segmentation réelle, fournisseurs d'IA, PDF corrigé | ⬜ |
+| 15 | Correction manuelle des zones | ✅ |
+| 16 | Fournisseurs d'IA réels, PDF corrigé, offre institutionnelle | ⬜ |
 | 8+ | Approfondissement des phases | ⬜ |
 
-**Tests exécutés à ce jour : 434, tous verts.** Dernière exécution : 2026-08-01.
+**Tests exécutés à ce jour : 456, tous verts.** Dernière exécution : 2026-08-01.
 
 ```
 Unitaires — 303, sans aucune infrastructure
@@ -1020,6 +1021,59 @@ l'immuabilité après verrouillage.
 - Une seule forme d'attribution exposée dans l'interface (tout ou rien) ; le
   moteur en gère six.
 - Pas de modification ni de suppression de question avant verrouillage.
+
+---
+
+### Étape 15 — Correction manuelle des zones — ✅
+
+L'import place les zones selon une **hypothèse de mise en page**. Un enseignant
+peut désormais la corriger, ce qui transforme une supposition en fait établi.
+
+**Deux conséquences, aussi importantes que la correction elle-même**
+
+1. La zone passe en `origin: 'manual'`, confiance 1 : le pipeline cesse de la
+   traiter comme douteuse, et la copie n'est plus classée « vérification
+   recommandée ».
+2. **L'analyse est remise en file**, puisqu'elle portait sur le mauvais fragment
+   de copie. Corriger la zone sans relancer l'analyse laisserait une proposition
+   fondée sur autre chose que ce qui est désormais affiché.
+
+**Seules les zones réellement déplacées sont relancées.** Un seuil de 0,2 %
+distingue un déplacement d'un tremblement de souris ; relancer les autres
+coûterait des appels d'IA sans rien changer au résultat. Vérifié par un test qui
+compte les jobs avant et après.
+
+**Ce qui est refusé**
+
+| Situation | Motif |
+|---|---|
+| Zone réduite à un trait | Donnerait une transcription vide |
+| Zone débordant de la page | Coordonnées invalides |
+| Zone appartenant à une autre copie | Introuvable |
+| Rôle sans `grading.propose` | Refusé |
+| Copie finalisée | Exigerait une nouvelle version de la note |
+
+**L'éditeur est utilisable au clavier**
+
+Flèches pour déplacer, majuscule + flèches pour redimensionner. Une zone qu'on ne
+peut placer qu'à la souris est inaccessible à une partie des utilisateurs.
+
+Les coordonnées restent **relatives** (0 à 1) : elles valent quelle que soit la
+taille d'affichage, et survivront au remplacement de l'image par sa version
+améliorée.
+
+L'événement d'audit conserve les coordonnées **avant et après** : on peut
+reconstituer ce qui a été analysé à chaque étape.
+
+**Tests** : 19 vérifications contre la base réelle, 3 de plus dans le test de
+fumée.
+
+**Limites connues**
+
+- Pas de détection automatique des zones : l'hypothèse de départ reste une
+  hypothèse, simplement corrigeable.
+- Une seule page par copie.
+- Pas de zone couvrant plusieurs pages, ni de continuation de réponse.
 
 ---
 

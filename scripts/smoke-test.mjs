@@ -187,6 +187,20 @@ async function main() {
     'aucune action n’est présentée comme non implémentée',
   )
 
+  // --- Éditeur de zones ----------------------------------------------------------
+  console.log('\nDécoupage des zones')
+
+  const zones = await get(`/copies/${idCopie}/zones`)
+  vérifier(zones.statut === 200, 'l’éditeur de zones répond', `statut ${zones.statut}`)
+  vérifier(
+    zones.corps.includes('hypothèse de mise en page'),
+    'l’origine des zones est annoncée sans détour',
+  )
+  vérifier(
+    copie.corps.includes('Vérifier le découpage des zones'),
+    'l’écran de correction y renvoie',
+  )
+
   // --- Historique --------------------------------------------------------------
   console.log('\nHistorique')
 

@@ -57,11 +57,37 @@ export interface ModelPricing {
 }
 
 /**
+ * Taux de conversion dollar vers euro.
+ *
+ * Les grilles tarifaires des fournisseurs sont publiées en dollars ; la table
+ * ci-dessous est en euros, parce que c'est la devise dans laquelle le produit
+ * est vendu. La conversion exige donc un taux, et un taux inventé fausserait le
+ * modèle de coût aussi sûrement qu'un tarif inventé.
+ *
+ * Celui-ci est le **taux de référence de la Banque centrale européenne du
+ * 31 juillet 2026** : 1 EUR = 1,1485 USD. Source :
+ * https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml
+ *
+ * Il est figé volontairement. Un taux qui bougerait à chaque appel rendrait
+ * incomparables deux corrections faites à un mois d'écart, et le coût par copie
+ * ne servirait plus à décider d'un prix de vente. À réviser à la main, en
+ * ajoutant une entrée datée plutôt qu'en modifiant les existantes.
+ *
+ * ⚠️ `findPricing` ignore aujourd'hui `effectiveFrom` : il retient la première
+ * ligne trouvée pour un couple fournisseur/modèle. Ajouter un second tarif daté
+ * sans corriger cette fonction changerait rétroactivement tout l'historique.
+ */
+const USD_PAR_EUR = 1.1485
+
+/** Convertit un tarif en dollars par million de jetons vers des micro-euros. */
+const usdParMillion = (usd: number): MicroEur => microEur((usd / USD_PAR_EUR) * 1_000_000)
+
+/**
  * Le fournisseur simulé ne coûte rien.
  *
- * Les tarifs réels seront ajoutés au moment d'intégrer un fournisseur, à partir
- * de sa grille publiée. Aucun tarif n'est inventé ici : un chiffre inventé
- * fausserait tout le modèle de coût, et ce modèle sert à décider du prix de vente.
+ * Les tarifs réels sont repris des grilles publiées, jamais estimés : un chiffre
+ * inventé fausserait tout le modèle de coût, et ce modèle sert à décider du prix
+ * de vente.
  */
 export const PRICING: readonly ModelPricing[] = [
   {
@@ -79,6 +105,16 @@ export const PRICING: readonly ModelPricing[] = [
     outputPerMillionTokens: microEur(0),
     perPage: null,
     effectiveFrom: '2026-01-01',
+  },
+  {
+    // Grille publiée : 5 $ par million de jetons d'entrée, 25 $ en sortie.
+    // https://platform.claude.com/docs/en/about-claude/models/overview
+    provider: 'anthropic',
+    model: 'claude-opus-5',
+    inputPerMillionTokens: usdParMillion(5),
+    outputPerMillionTokens: usdParMillion(25),
+    perPage: null,
+    effectiveFrom: '2026-08-01',
   },
 ]
 

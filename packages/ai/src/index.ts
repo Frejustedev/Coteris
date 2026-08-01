@@ -16,3 +16,11 @@ export {
   type MockOcrOptions,
   type TranscriptionFixtures,
 } from './mock/index'
+export {
+  createAnthropicTextAnalysisProvider,
+  MODELE_PAR_DEFAUT,
+  type AnthropicAnalysisOptions,
+  type ClientAnalyse,
+  type DiagnosticAnalyse,
+} from './anthropic/index'
+export { VERSION_INVITE } from './anthropic/prompt'

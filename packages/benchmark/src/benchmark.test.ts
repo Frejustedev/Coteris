@@ -11,6 +11,8 @@ import {
   estSignificatif,
   fiabilitéVerts,
   parseDataset,
+  permetDeChoisirUnOcr,
+  portéeDuJeu,
   répartitionConfiance,
   évaluer,
   type ObservationCritère,
@@ -235,6 +237,49 @@ describe('rapport et significativité', () => {
       ),
     )
     expect(estSignificatif(grand)).toBe(true)
+  })
+})
+
+// --- Portée de la mesure -----------------------------------------------------------------
+
+describe('portée de la mesure', () => {
+  it('reconnaît un jeu manuscrit comme mesurant la chaîne complète', () => {
+    expect(portéeDuJeu(['manuscrit', 'manuscrit'])).toBe('chaine_complete')
+  })
+
+  it('reconnaît un jeu de réponses saisies comme une borne haute', () => {
+    // La transcription est parfaite par construction : on mesure l'analyse
+    // seule, pas la lecture manuscrite.
+    expect(portéeDuJeu(['saisie', 'saisie'])).toBe('borne_haute')
+  })
+
+  it('refuse d’interpréter un jeu mixte', () => {
+    // Les chiffres agrégés y seraient une moyenne entre deux choses différentes.
+    expect(portéeDuJeu(['manuscrit', 'saisie'])).toBe('mixte')
+  })
+
+  it('n’autorise à choisir un OCR que sur la chaîne complète', () => {
+    const assez = Array.from({ length: EFFECTIF_MINIMAL_SIGNIFICATIF }, () =>
+      réponse({ critères: [critère('present', 'present')] }),
+    )
+
+    expect(permetDeChoisirUnOcr(évaluer('A', assez, 'chaine_complete'))).toBe(true)
+
+    // Même avec un effectif suffisant et d'excellents chiffres : des
+    // transcriptions parfaites ne disent rien de la lecture manuscrite.
+    expect(permetDeChoisirUnOcr(évaluer('A', assez, 'borne_haute'))).toBe(false)
+    expect(permetDeChoisirUnOcr(évaluer('A', assez, 'mixte'))).toBe(false)
+  })
+
+  it('n’autorise pas non plus sur un effectif trop faible', () => {
+    const peu = [réponse({ critères: [critère('present', 'present')] })]
+    expect(permetDeChoisirUnOcr(évaluer('A', peu, 'chaine_complete'))).toBe(false)
+  })
+
+  it('porte la portée dans le rapport', () => {
+    expect(évaluer('A', [], 'borne_haute').portée).toBe('borne_haute')
+    // Par défaut, on suppose la chaîne complète : c'est le cas réel.
+    expect(évaluer('A', []).portée).toBe('chaine_complete')
   })
 })
 

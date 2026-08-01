@@ -15,6 +15,24 @@ Inventer des chiffres ici fausserait la décision la plus importante du projet �
 le choix du fournisseur d'OCR et d'analyse — et donnerait une confiance
 injustifiée dans un produit qui promet précisément l'inverse.
 
+## En attendant : une borne haute est possible dès maintenant
+
+Des réponses **saisies** — tapées plutôt que manuscrites — suffisent pour une
+première mesure. La transcription est alors parfaite par construction, ce qui
+isole l'étape d'identification des critères.
+
+Ce que cela permet :
+
+- **répondre à la question éliminatoire** — si les critères sont mal identifiés
+  sur du texte parfait, aucun OCR ne le rattrapera ;
+- **évaluer et implémenter un fournisseur d'analyse textuelle** sans dépendre de
+  copies manuscrites ;
+- établir la référence de comparaison pour, plus tard, chiffrer exactement ce que
+  la lecture manuscrite fait perdre.
+
+Ce que cela ne permet pas : **choisir un fournisseur d'OCR**. Le script le dit
+explicitement, et `permetDeChoisirUnOcr()` refuse tout rapport de cette portée.
+
 ## Ce qui est prêt
 
 | Élément | État |

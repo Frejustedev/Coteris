@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "description": "Jeu SYNTHÉTIQUE de réponses SAISIES — aucune copie réelle. Sert à vérifier que le harnais signale correctement une borne haute. Les transcriptions sont parfaites par construction : ces chiffres ne disent rien de la lecture manuscrite.",
+  "réponses": [
+    {
+      "id": "saisie-001",
+      "submissionId": "saisie-c1",
+      "questionId": "saisie-q1",
+      "question": "Pourquoi administre-t-on de l'iode stable avant certaines explorations à la MIBG ?",
+      "corrigé": "L'iode stable sature ou bloque la thyroïde afin de réduire sa captation d'iode radioactif libre.",
+      "transcriptionRéférence": "On donne de l'iode stable pour bloquer la thyroïde et réduire la captation d'iode radioactif libre.",
+      "origineTranscription": "saisie",
+      "critères": [
+        {
+          "id": "saisie-k1",
+          "label": "Mention de l'iode stable",
+          "maxPoints": 250,
+          "acceptableAnswers": ["iode stable", "iode non radioactif"]
+        },
+        {
+          "id": "saisie-k2",
+          "label": "Blocage de la thyroïde",
+          "maxPoints": 250,
+          "acceptableAnswers": ["bloquer la thyroïde", "protéger la thyroïde"]
+        },
+        {
+          "id": "saisie-k3",
+          "label": "Réduction de la captation",
+          "maxPoints": 500,
+          "acceptableAnswers": ["réduire la captation", "captation d'iode radioactif libre"]
+        }
+      ],
+      "décisionsRéférence": [
+        { "criterionId": "saisie-k1", "référence": "present", "pointsRéférence": 250 },
+        { "criterionId": "saisie-k2", "référence": "present", "pointsRéférence": 250 },
+        { "criterionId": "saisie-k3", "référence": "present", "pointsRéférence": 500 }
+      ],
+      "totalRéférence": 1000,
+      "pointsMax": 1000
+    },
+    {
+      "id": "saisie-002",
+      "submissionId": "saisie-c2",
+      "questionId": "saisie-q1",
+      "question": "Pourquoi administre-t-on de l'iode stable avant certaines explorations à la MIBG ?",
+      "corrigé": "L'iode stable sature ou bloque la thyroïde afin de réduire sa captation d'iode radioactif libre.",
+      "transcriptionRéférence": "Il faut donner de l'iode non radioactif pour protéger la thyroïde avant l'injection.",
+      "origineTranscription": "saisie",
+      "critères": [
+        {
+          "id": "saisie-k1",
+          "label": "Mention de l'iode stable",
+          "maxPoints": 250,
+          "acceptableAnswers": ["iode stable", "iode non radioactif"]
+        },
+        {
+          "id": "saisie-k2",
+          "label": "Blocage de la thyroïde",
+          "maxPoints": 250,
+          "acceptableAnswers": ["bloquer la thyroïde", "protéger la thyroïde"]
+        },
+        {
+          "id": "saisie-k3",
+          "label": "Réduction de la captation",
+          "maxPoints": 500,
+          "acceptableAnswers": ["réduire la captation", "captation d'iode radioactif libre"]
+        }
+      ],
+      "décisionsRéférence": [
+        { "criterionId": "saisie-k1", "référence": "present", "pointsRéférence": 250 },
+        { "criterionId": "saisie-k2", "référence": "present", "pointsRéférence": 250 },
+        { "criterionId": "saisie-k3", "référence": "absent", "pointsRéférence": 0 }
+      ],
+      "totalRéférence": 500,
+      "pointsMax": 1000
+    },
+    {
+      "id": "saisie-003",
+      "submissionId": "saisie-c3",
+      "questionId": "saisie-q1",
+      "question": "Pourquoi administre-t-on de l'iode stable avant certaines explorations à la MIBG ?",
+      "corrigé": "L'iode stable sature ou bloque la thyroïde afin de réduire sa captation d'iode radioactif libre.",
+      "transcriptionRéférence": "Pour éviter que la glande thyroïde ne fixe le traceur radioactif.",
+      "origineTranscription": "saisie",
+      "critères": [
+        {
+          "id": "saisie-k1",
+          "label": "Mention de l'iode stable",
+          "maxPoints": 250,
+          "acceptableAnswers": ["iode stable", "iode non radioactif"]
+        },
+        {
+          "id": "saisie-k2",
+          "label": "Blocage de la thyroïde",
+          "maxPoints": 250,
+          "acceptableAnswers": ["bloquer la thyroïde", "protéger la thyroïde"]
+        },
+        {
+          "id": "saisie-k3",
+          "label": "Réduction de la captation",
+          "maxPoints": 500,
+          "acceptableAnswers": ["réduire la captation", "captation d'iode radioactif libre"]
+        }
+      ],
+      "décisionsRéférence": [
+        { "criterionId": "saisie-k1", "référence": "absent", "pointsRéférence": 0 },
+        { "criterionId": "saisie-k2", "référence": "present", "pointsRéférence": 250 },
+        { "criterionId": "saisie-k3", "référence": "present", "pointsRéférence": 500 }
+      ],
+      "totalRéférence": 750,
+      "pointsMax": 1000
+    }
+  ]
+}

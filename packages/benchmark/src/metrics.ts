@@ -242,8 +242,31 @@ export function coûts(observations: readonly ObservationRéponse[]): Coûts {
 
 // --- Rapport complet ---------------------------------------------------------------
 
+/**
+ * Ce que le rapport mesure réellement.
+ *
+ * `chaine_complete` : lecture manuscrite **et** analyse. Le seul résultat qui
+ * réponde à la question du produit.
+ *
+ * `borne_haute` : analyse seule, sur des transcriptions parfaites — des réponses
+ * saisies, par exemple. Si le système échoue ici, aucun OCR ne le sauvera ; s'il
+ * réussit, on ne sait toujours pas ce que la lecture manuscrite fera perdre.
+ *
+ * `mixte` : le jeu mélange les deux origines. Les chiffres agrégés ne sont alors
+ * interprétables ni comme l'un ni comme l'autre.
+ */
+export type PortéeMesure = 'chaine_complete' | 'borne_haute' | 'mixte'
+
+export const PORTÉE_LABELS: Record<PortéeMesure, string> = {
+  chaine_complete: 'chaîne complète (lecture manuscrite + analyse)',
+  borne_haute: 'BORNE HAUTE — analyse seule, sur transcriptions parfaites',
+  mixte: 'MIXTE — le jeu mélange manuscrit et saisie, chiffres non interprétables',
+}
+
 export interface RapportPipeline {
   readonly pipeline: string
+  /** Ce que ces chiffres mesurent réellement. */
+  readonly portée: PortéeMesure
   readonly effectifRéponses: number
   readonly effectifCritères: number
   readonly accord: AccordParCritère
@@ -254,14 +277,32 @@ export interface RapportPipeline {
   readonly coûts: Coûts
 }
 
+/**
+ * Détermine ce qu'un jeu permet réellement de mesurer.
+ *
+ * Un jeu mélangeant manuscrit et saisie ne mesure ni l'un ni l'autre : les
+ * chiffres agrégés y seraient une moyenne entre deux choses différentes.
+ */
+export function portéeDuJeu(
+  origines: readonly ('manuscrit' | 'saisie')[],
+): PortéeMesure {
+  if (origines.length === 0) return 'mixte'
+  const manuscrit = origines.some((o) => o === 'manuscrit')
+  const saisie = origines.some((o) => o === 'saisie')
+  if (manuscrit && saisie) return 'mixte'
+  return manuscrit ? 'chaine_complete' : 'borne_haute'
+}
+
 export function évaluer(
   pipeline: string,
   observations: readonly ObservationRéponse[],
+  portée: PortéeMesure = 'chaine_complete',
 ): RapportPipeline {
   const critères = observations.flatMap((o) => o.critères)
 
   return {
     pipeline,
+    portée,
     effectifRéponses: observations.length,
     effectifCritères: critères.length,
     accord: accordParCritère(critères),
@@ -284,4 +325,14 @@ export const EFFECTIF_MINIMAL_SIGNIFICATIF = 200
 
 export function estSignificatif(rapport: RapportPipeline): boolean {
   return rapport.effectifCritères >= EFFECTIF_MINIMAL_SIGNIFICATIF
+}
+
+/**
+ * Un rapport peut-il servir à choisir un fournisseur d'OCR ?
+ *
+ * Non si les transcriptions étaient parfaites : le rapport ne dit alors rien de
+ * la lecture manuscrite. C'est la confusion que ce garde-fou empêche.
+ */
+export function permetDeChoisirUnOcr(rapport: RapportPipeline): boolean {
+  return rapport.portée === 'chaine_complete' && estSignificatif(rapport)
 }

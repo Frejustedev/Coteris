@@ -19,6 +19,36 @@ les critères sont mal identifiés.
 Les deux étapes se mesurent donc **séparément**, faute de quoi on ne saurait pas
 laquelle échoue.
 
+## Deux portées de mesure, à ne jamais confondre
+
+Chaque réponse du jeu déclare l'origine de sa transcription, et le rapport en tire
+sa **portée** :
+
+| Portée | Jeu | Ce que le résultat autorise |
+|---|---|---|
+| **Chaîne complète** | Réponses manuscrites, transcrites par un humain | Répond à la question du produit. Seule portée permettant de **choisir un fournisseur d'OCR**. |
+| **Borne haute** | Réponses saisies : transcription parfaite par construction | Mesure l'identification des critères **seule**. |
+| **Mixte** | Les deux mélangés | Rien. Les chiffres agrégés sont une moyenne entre deux choses différentes. |
+
+### Pourquoi une borne haute vaut quand même le détour
+
+Elle répond à une question éliminatoire :
+
+> Si le système n'identifie pas correctement les critères sur du texte **parfait**,
+> aucun OCR ne le sauvera.
+
+Une borne haute médiocre est donc une réponse — négative — à l'hypothèse du
+produit, obtenue à moindre coût. Une borne haute excellente ne prouve rien sur la
+lecture manuscrite, mais indique que la suite vaut la peine d'être mesurée.
+
+C'est aussi le seul type de jeu qu'on peut constituer **sans copies manuscrites**,
+ce qui en fait un point de départ raisonnable.
+
+`permetDeChoisirUnOcr()` refuse tout rapport qui ne serait pas de portée « chaîne
+complète » **et** significatif. Le script l'affiche en clair : la confusion entre
+une borne haute et une mesure réelle est le plus sûr moyen de choisir un mauvais
+fournisseur.
+
 ## Métriques
 
 Implémentées dans `packages/benchmark`, et **testées sur des cas construits à la

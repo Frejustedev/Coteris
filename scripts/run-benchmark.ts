@@ -17,6 +17,9 @@ import { resolve } from 'node:path'
 import {
   estSignificatif,
   parseDataset,
+  permetDeChoisirUnOcr,
+  portéeDuJeu,
+  PORTÉE_LABELS,
   évaluer,
   type ObservationCritère,
   type ObservationRéponse,
@@ -192,6 +195,7 @@ function points(millipoints: number): string {
 
 function afficher(rapport: RapportPipeline): void {
   console.log(`\n── ${rapport.pipeline} ──────────────────────────────────`)
+  console.log(`  portée                   ${PORTÉE_LABELS[rapport.portée]}`)
   console.log(`  réponses évaluées        ${rapport.effectifRéponses}`)
   console.log(`  critères évalués         ${rapport.effectifCritères}`)
   console.log('')
@@ -230,6 +234,22 @@ function afficher(rapport: RapportPipeline): void {
     )
     console.log('    ne doit être tirée de ces chiffres.')
   }
+
+  if (!permetDeChoisirUnOcr(rapport)) {
+    console.log('')
+    if (rapport.portée === 'borne_haute') {
+      console.log('  ⚠ BORNE HAUTE — les transcriptions étaient parfaites (réponses saisies).')
+      console.log('    Ces chiffres mesurent l’identification des critères, PAS la lecture')
+      console.log('    manuscrite. Ils ne permettent donc pas de choisir un fournisseur d’OCR.')
+      console.log('')
+      console.log('    Ce qu’ils disent malgré tout : si l’accord est mauvais ici, sur du texte')
+      console.log('    parfait, aucun OCR ne le rattrapera. Une borne haute médiocre est une')
+      console.log('    réponse — négative — à la question du produit.')
+    } else if (rapport.portée === 'mixte') {
+      console.log('  ⚠ JEU MIXTE — manuscrit et saisie sont mélangés. Les chiffres agrégés')
+      console.log('    sont une moyenne entre deux choses différentes. Séparez les deux jeux.')
+    }
+  }
 }
 
 async function main(): Promise<void> {
@@ -257,8 +277,11 @@ fausserait la décision la plus importante du projet, celle du fournisseur.
   const brut = JSON.parse(await readFile(resolve(chemin), 'utf8')) as unknown
   const jeu = parseDataset(brut)
 
+  const portée = portéeDuJeu(jeu.réponses.map((r) => r.origineTranscription))
+
   console.log(`\nJeu : ${jeu.description}`)
   console.log(`Réponses : ${jeu.réponses.length}`)
+  console.log(`Portée : ${PORTÉE_LABELS[portée]}`)
 
   const demandé = argument('pipeline')
   const àÉvaluer = demandé ? [demandé] : Object.keys(PIPELINES)
@@ -277,7 +300,7 @@ fausserait la décision la plus importante du projet, celle du fournisseur.
       observations.push(await évaluerRéponse(réponse, analyzer))
     }
 
-    afficher(évaluer(nom, observations))
+    afficher(évaluer(nom, observations, portée))
   }
 
   console.log(

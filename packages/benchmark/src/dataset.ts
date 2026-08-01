@@ -53,6 +53,18 @@ export const réponseÉvaluationSchema = z.object({
   qualitéScan: z.enum(['bonne', 'moyenne', 'mauvaise']).default('bonne'),
   /** Style d'écriture, pour la même raison. */
   styleÉcriture: z.enum(['lisible', 'moyen', 'difficile']).default('lisible'),
+  /**
+   * D'où vient la transcription de référence.
+   *
+   * `manuscrit` : la réponse a été écrite à la main puis transcrite. C'est le cas
+   * réel, et le seul qui permette de mesurer la chaîne complète.
+   *
+   * `saisie` : la réponse a été tapée. La transcription est parfaite par
+   * construction, ce qui **isole l'étape d'analyse** et donne une borne haute.
+   * Utile — mais un résultat obtenu ainsi ne dit rien de ce que la lecture
+   * manuscrite fera perdre.
+   */
+  origineTranscription: z.enum(['manuscrit', 'saisie']).default('manuscrit'),
   /** Chemin de l'image de la zone, relatif au jeu. Facultatif. */
   image: z.string().optional(),
 })

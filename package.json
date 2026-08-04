@@ -20,6 +20,7 @@
     "verify:review": "tsx scripts/verify-review.ts",
     "verify:worker": "tsx scripts/verify-worker.ts",
     "verify:exports": "tsx scripts/verify-exports.ts",
+    "verify:corrige": "tsx scripts/verify-corrige.ts",
     "verify:import": "tsx scripts/verify-import.ts",
     "verify:assessment": "tsx scripts/verify-assessment.ts",
     "verify:segmentation": "tsx scripts/verify-segmentation.ts",

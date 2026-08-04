@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server'
 import { and, eq } from 'drizzle-orm'
 
 import { can } from '@coteris/auth'
+import { contentTypeForFileName } from '@coteris/exports'
 
 import { db, schema } from '~/lib/db'
 import { getCurrentUser } from '~/lib/session'
@@ -52,11 +53,16 @@ export async function GET(
   const objet = await storage().get(ligne.fileKey)
   if (!objet) return new NextResponse(null, { status: 404 })
 
+  // Le type est DÉDUIT du nom enregistré, jamais figé. Servir tout en text/csv
+  // avec `nosniff` interdit au navigateur tout rattrapage : un corrigé PDF
+  // s'ouvrirait dans un tableur, un classeur en texte brut.
+  const nomFichier = ligne.fileName ?? 'export.csv'
+
   return new NextResponse(Buffer.from(objet.bytes), {
     headers: {
-      'content-type': 'text/csv; charset=utf-8',
+      'content-type': contentTypeForFileName(nomFichier),
       'content-length': String(objet.size),
-      'content-disposition': `attachment; filename="${ligne.fileName ?? 'export.csv'}"`,
+      'content-disposition': `attachment; filename="${nomFichier}"`,
       // Jamais en cache partagé : le fichier contient des notes.
       'cache-control': 'private, no-store',
       'x-content-type-options': 'nosniff',

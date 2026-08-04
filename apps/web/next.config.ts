@@ -20,6 +20,21 @@ const config: NextConfig = {
     '@coteris/exports',
   ],
 
+  experimental: {
+    serverActions: {
+      // L'import de copies passe par une action serveur et un FormData. Sans
+      // cette ligne, Next.js plafonne le corps à 1 Mo — alors que le service
+      // d'import annonce accepter jusqu'à UPLOAD_MAX_FILE_SIZE_MB, 25 Mo par
+      // défaut. L'utilisateur recevait donc un refus opaque sur toute copie
+      // scannée un peu lourde.
+      //
+      // Aucun test ne le voyait : scripts/verify-import.ts appelle le service
+      // directement, sans traverser la couche HTTP. Le défaut ne se manifestait
+      // que dans le navigateur, c'est-à-dire uniquement chez l'utilisateur.
+      bodySizeLimit: `${Number(process.env['UPLOAD_MAX_FILE_SIZE_MB'] ?? 25)}mb`,
+    },
+  },
+
   typescript: {
     // Le typage est vérifié par `pnpm typecheck` dans la CI, sur tout le
     // monorepo, et il l'est aussi ici : une erreur de type ne doit jamais

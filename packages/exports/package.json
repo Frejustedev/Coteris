@@ -16,6 +16,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@coteris/database": "workspace:*",
     "@coteris/shared": "workspace:*"
   },
   "devDependencies": {

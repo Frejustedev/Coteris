@@ -51,3 +51,4 @@ desktop.ini
 !.vscode/settings.recommended.json
 .idea/
 *.swp
+.stockage/

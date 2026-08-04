@@ -8,7 +8,7 @@
  */
 
 import { createHash } from 'node:crypto'
-import { and, asc, eq, isNull, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 
 import { AUDIT_ACTIONS } from '@coteris/database'
 import { ForbiddenError, authorize, type Principal } from '@coteris/auth'
@@ -344,10 +344,22 @@ export async function verrouillerBarème(
     )
     .orderBy(asc(schema.questions.sortOrder))
 
+  // L'empreinte scelle le barème qui CORRIGERA, pas le contenu de la table.
+  // Sans ces deux filtres, elle intégrait des critères supprimés et des critères
+  // en brouillon — que le worker écarte. Deux barèmes corrigeant à l'identique
+  // auraient reçu des empreintes différentes, et la promesse « aucune correction
+  // sans barème validé » se serait appuyée sur un sceau qui ne scellait pas le
+  // bon objet.
   const critères = await db
     .select()
     .from(schema.rubricCriteria)
-    .where(eq(schema.rubricCriteria.rubricVersionId, épreuve.rubricVersionId))
+    .where(
+      and(
+        eq(schema.rubricCriteria.rubricVersionId, épreuve.rubricVersionId),
+        isNull(schema.rubricCriteria.deletedAt),
+        inArray(schema.rubricCriteria.validationStatus, ['accepted', 'modified']),
+      ),
+    )
     .orderBy(asc(schema.rubricCriteria.sortOrder))
 
   const sujet = questions.map((q) => `${q.number}. ${q.prompt}`).join('\n')
@@ -583,8 +595,30 @@ async function contrôlerCohérence(
       ),
     )
 
+  // Seuls les critères acceptés ou modifiés corrigent réellement : c'est le
+  // filtre qu'applique le worker (`validation_status IN ('accepted','modified')`).
+  // Sommer ici tous les critères non supprimés créait une somme fantôme — un
+  // critère resté en brouillon comptait au verrouillage et disparaissait à la
+  // correction, si bien que la copie perdait ses points sans qu'aucun contrôle
+  // ne l'ait signalé.
+  const corrigeants = critères.filter(
+    (c) => c.validationStatus === 'accepted' || c.validationStatus === 'modified',
+  )
+
+  const enAttente = critères.filter(
+    (c) => c.validationStatus !== 'accepted' && c.validationStatus !== 'modified',
+  )
+  if (enAttente.length > 0) {
+    // Message explicite plutôt qu'un écart de somme inexplicable. Un critère
+    // proposé par un modèle et laissé en brouillon est exactement ce cas.
+    problèmes.push(
+      `${enAttente.length} critère(s) ne sont ni acceptés ni modifiés : ils ne ` +
+        `corrigeraient rien. Tranchez-les ou supprimez-les avant de verrouiller.`,
+    )
+  }
+
   for (const q of questions) {
-    const siens = critères.filter((c) => c.questionId === q.id)
+    const siens = corrigeants.filter((c) => c.questionId === q.id)
     if (siens.length === 0) {
       problèmes.push(`Question ${q.number} : aucun critère. Elle ne serait jamais corrigeable.`)
       continue

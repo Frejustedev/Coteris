@@ -8,30 +8,9 @@ import { requireUser } from '~/lib/session'
 
 export const metadata: Metadata = { title: 'Historique' }
 
-const LIBELLÉS: Record<string, string> = {
-  'auth.login': 'Connexion',
-  'assessment.create': 'Création d’épreuve',
-  'assessment.status_change': 'Changement d’état',
-  'subject.import': 'Import du sujet',
-  'question.update': 'Modification de question',
-  'answer_key.create': 'Création du corrigé',
-  'answer_key.validate': 'Validation du corrigé',
-  'rubric.create': 'Création du barème',
-  'rubric.validate': 'Validation du barème',
-  'rubric.lock': 'Verrouillage du barème',
-  'submission.import': 'Import d’une copie',
-  'ocr.run': 'Lecture de la copie',
-  'transcription.edit': 'Correction de transcription',
-  'grade.propose': 'Proposition de note',
-  'grade.review': 'Validation d’une décision',
-  'grade.modify': 'Modification d’une note',
-  'grade.finalize': 'Finalisation de la note',
-  'grade.publish': 'Publication',
-  'export.create': 'Export',
-  'identity.reveal': 'Levée d’anonymat',
-  'permission.change': 'Changement de permission',
-  'assignment.change': 'Attribution de copie',
-}
+// Table unique, tenue à côté du catalogue d'actions. Elle était recopiée ici et
+// dans l'export CSV, et les deux copies avaient commencé à diverger.
+import { libelléAction } from '@coteris/database'
 
 export default async function Historique() {
   const { principal } = await requireUser()
@@ -66,7 +45,7 @@ export default async function Historique() {
                   #{e.sequence}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">{LIBELLÉS[e.action] ?? e.action}</p>
+                  <p className="text-sm font-medium">{libelléAction(e.action)}</p>
                   {e.reason && (
                     <p className="mt-0.5 text-xs text-anthracite-600">{e.reason}</p>
                   )}

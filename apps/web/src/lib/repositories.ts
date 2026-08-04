@@ -250,8 +250,17 @@ export async function getSubmissionReview(
       orun.confidence         AS "ocrConfidence",
       ake.content             AS "answerKey"
     FROM questions q
-    LEFT JOIN answer_regions ar
-      ON ar.question_id = q.id AND ar.submission_id = ${submissionId}::uuid
+    -- Une seule zone par question, la première. Sans ce LATERAL, une question
+    -- découpée en deux zones — ce que le modèle de données prévoit
+    -- explicitement, et ce que l'import multipage rendra courant — apparaîtrait
+    -- DEUX FOIS sur l'écran de correction, avec deux fois ses points. Même
+    -- raison que le LATERAL sur grading_runs juste en dessous.
+    LEFT JOIN LATERAL (
+      SELECT * FROM answer_regions a
+      WHERE a.question_id = q.id AND a.submission_id = ${submissionId}::uuid
+      ORDER BY a.sort_order
+      LIMIT 1
+    ) ar ON true
     LEFT JOIN transcription_versions tv
       ON tv.answer_region_id = ar.id AND tv.is_current = true
     LEFT JOIN ocr_runs orun
@@ -266,10 +275,24 @@ export async function getSubmissionReview(
       ORDER BY gr.created_at DESC
       LIMIT 1
     ) r ON true
+    -- Le corrigé montré au correcteur doit être CELUI QUI A SERVI : la version
+    -- verrouillée la plus récente, et ses seuls éléments validés. Sans ces deux
+    -- restrictions, l'écran agrégeait toutes les versions du corrigé et tous les
+    -- éléments quel que soit leur état — l'enseignant relisait donc une
+    -- référence différente de celle sur laquelle la note a été calculée.
     LEFT JOIN LATERAL (
-      SELECT string_agg(content, ' · ' ORDER BY sort_order) AS content
+      SELECT string_agg(e.content, ' · ' ORDER BY e.sort_order) AS content
       FROM answer_key_elements e
       WHERE e.question_id = q.id
+        AND e.validation_status IN ('accepted', 'modified')
+        AND e.answer_key_version_id = (
+          SELECT rv.answer_key_version_id
+          FROM rubrics rb
+          JOIN rubric_versions rv ON rv.rubric_id = rb.id
+          WHERE rb.assessment_id = q.assessment_id AND rv.locked_at IS NOT NULL
+          ORDER BY rv.version_number DESC
+          LIMIT 1
+        )
     ) ake ON true
     WHERE q.organization_id = ${organizationId}::uuid
       AND q.assessment_id = (

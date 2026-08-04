@@ -87,7 +87,66 @@ export const AUDIT_ACTIONS = {
   EXPORT_CREATE: 'export.create',
   IDENTITY_REVEAL: 'identity.reveal',
   PERMISSION_CHANGE: 'permission.change',
+  /** Attribution d'une copie à un correcteur. */
   ASSIGNMENT_CHANGE: 'assignment.change',
+  /**
+   * Ajustement manuel des zones de réponse d'une copie.
+   *
+   * Distinct de `assignment.change`, qui portait cet événement à tort. Les deux
+   * finiront filtrés séparément — l'un pour retracer qui a corrigé quoi, l'autre
+   * pour retracer un découpage contesté — et la chaîne d'audit est en ajout
+   * seul : un mélange devient irréparable dès la première ligne écrite.
+   */
+  REGION_ADJUST: 'region.adjust',
 } as const
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS]
+
+/**
+ * Libellés lisibles des actions, en français.
+ *
+ * Ils vivent ici, à côté du catalogue qui fait foi, et non chez chaque
+ * consommateur : la table était recopiée dans l'export CSV et dans l'écran
+ * d'historique, et les deux copies avaient déjà commencé à diverger. Le type
+ * `Record<AuditAction, string>` fait échouer la compilation dès qu'une action
+ * est ajoutée sans son libellé — un journal d'audit dont une ligne s'affiche en
+ * identifiant technique ne remplit pas son office.
+ */
+export const LIBELLÉS_ACTIONS: Record<AuditAction, string> = {
+  'auth.login': 'Connexion',
+  'auth.logout': 'Déconnexion',
+  'assessment.create': 'Création d’épreuve',
+  'assessment.status_change': 'Changement d’état',
+  'subject.import': 'Import du sujet',
+  'question.update': 'Modification de question',
+  'answer_key.create': 'Création du corrigé',
+  'answer_key.validate': 'Validation du corrigé',
+  'rubric.create': 'Création du barème',
+  'rubric.validate': 'Validation du barème',
+  'rubric.lock': 'Verrouillage du barème',
+  'submission.import': 'Import d’une copie',
+  'ocr.run': 'Lecture de la copie',
+  'transcription.edit': 'Correction de transcription',
+  'grade.propose': 'Proposition de note',
+  'grade.review': 'Validation d’une décision',
+  'grade.modify': 'Modification d’une note',
+  'grade.finalize': 'Finalisation de la note',
+  'grade.publish': 'Publication',
+  'export.create': 'Export',
+  'identity.reveal': 'Levée d’anonymat',
+  'permission.change': 'Changement de permission',
+  'assignment.change': 'Attribution de copie',
+  'region.adjust': 'Ajustement des zones de réponse',
+}
+
+/**
+ * Libellé d'une action lue en base.
+ *
+ * La colonne `action` est un `text` : une valeur écrite par une version
+ * antérieure du code peut ne plus figurer au catalogue. On rend alors
+ * l'identifiant brut plutôt que rien — un journal en ajout seul contient
+ * forcément des traces plus vieilles que le code qui les relit.
+ */
+export function libelléAction(action: string): string {
+  return (LIBELLÉS_ACTIONS as Record<string, string>)[action] ?? action
+}

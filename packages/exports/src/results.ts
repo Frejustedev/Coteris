@@ -10,6 +10,8 @@
  * transmet à un jury.
  */
 
+import { libelléAction, LIBELLÉS_ACTIONS } from '@coteris/database'
+
 import { formatDateCsv, formatPointsCsv, toCsv, type CsvOptions } from './csv'
 
 export interface QuestionColonne {
@@ -104,7 +106,7 @@ export function buildAuditCsv(
   const corps = lignes.map((l) => [
     l.sequence,
     formatDateCsv(l.occurredAt),
-    ACTIONS_LISIBLES[l.action] ?? l.action,
+    libelléAction(l.action),
     l.objectType,
     l.acteur ?? 'système',
     l.rôle ?? '',
@@ -115,30 +117,14 @@ export function buildAuditCsv(
   return toCsv(entêtes, corps, options)
 }
 
-export const ACTIONS_LISIBLES: Record<string, string> = {
-  'auth.login': 'Connexion',
-  'assessment.create': 'Création d’épreuve',
-  'assessment.status_change': 'Changement d’état',
-  'subject.import': 'Import du sujet',
-  'question.update': 'Modification de question',
-  'answer_key.create': 'Création du corrigé',
-  'answer_key.validate': 'Validation du corrigé',
-  'rubric.create': 'Création du barème',
-  'rubric.validate': 'Validation du barème',
-  'rubric.lock': 'Verrouillage du barème',
-  'submission.import': 'Import d’une copie',
-  'ocr.run': 'Lecture de la copie',
-  'transcription.edit': 'Correction de transcription',
-  'grade.propose': 'Proposition de note',
-  'grade.review': 'Validation d’une décision',
-  'grade.modify': 'Modification d’une note',
-  'grade.finalize': 'Finalisation de la note',
-  'grade.publish': 'Publication',
-  'export.create': 'Export',
-  'identity.reveal': 'Levée d’anonymat',
-  'permission.change': 'Changement de permission',
-  'assignment.change': 'Attribution de copie',
-}
+/**
+ * Libellés lisibles des actions d'audit.
+ *
+ * La table vit désormais dans `@coteris/database`, à côté de la liste des
+ * actions qui fait foi. Elle était recopiée ici et dans l'écran d'historique, et
+ * les deux copies avaient déjà commencé à diverger.
+ */
+export const ACTIONS_LISIBLES = LIBELLÉS_ACTIONS
 
 /** Nom de fichier proposé, sans caractère problématique. */
 export function exportFileName(titreÉpreuve: string, genre: string, date: Date): string {

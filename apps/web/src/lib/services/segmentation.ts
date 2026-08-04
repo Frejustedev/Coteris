@@ -185,7 +185,11 @@ export async function corrigerZones(
         organizationId: principal.organizationId,
         actorId: userId,
         actorRole: principal.roles[0] ?? null,
-        action: AUDIT_ACTIONS.ASSIGNMENT_CHANGE,
+        // Un ajustement de zones n'est pas une attribution de copie. Les deux
+        // événements portaient la même action, ce qui rendait le journal
+        // d'attribution illisible dès qu'on le filtrerait — et la chaîne étant
+        // en ajout seul, la confusion aurait été rétroactive.
+        action: AUDIT_ACTIONS.REGION_ADJUST,
         objectType: 'submission',
         objectId: entrée.submissionId,
         previousValue: {

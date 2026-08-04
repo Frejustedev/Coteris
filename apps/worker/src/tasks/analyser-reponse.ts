@@ -371,6 +371,16 @@ async function chargerContexte(
     FROM answer_key_elements
     WHERE question_id = ${String(base['question_id'])}::uuid
       AND answer_key_version_id = ${String(base['answer_key_version_id'])}::uuid
+      -- Même filtre que la requête des critères vingt lignes plus haut. Il y
+      -- manquait : le corrigé transmis au modèle pouvait donc contenir des
+      -- éléments jamais validés par un enseignant, alors que les critères
+      -- correspondants, eux, étaient écartés. Le modèle jugeait sur une
+      -- référence plus large que celle qui lui servait de barème.
+      --
+      -- Inoffensif tant que rien n'écrit d'autre que « accepted » — ce qui est
+      -- le cas aujourd'hui. Devient une note fausse dès la première proposition
+      -- laissée en brouillon, c'est-à-dire dès l'aide à la structuration.
+      AND validation_status IN ('accepted', 'modified')
   `)) as unknown as { texte: string | null }[]
 
   // Le worker préfère TOUJOURS une transcription existante à une nouvelle

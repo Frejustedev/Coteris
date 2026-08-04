@@ -374,10 +374,23 @@ fausserait la décision la plus importante du projet, celle du fournisseur.
     const analyzer = pipeline.analyzer()
     diagnostics.length = 0
 
+    // `--limite N` borne l'exécution aux N premières réponses. Avec un
+    // fournisseur facturé, lancer 208 appels pour découvrir au dixième que la
+    // clé est absente ou le schéma refusé serait un gâchis évitable. Les
+    // métriques d'un échantillon ne sont pas publiables — le rapport le dit.
+    const limite = Number(argument('limite') ?? jeu.réponses.length)
+    const àTraiter = jeu.réponses.slice(0, limite)
+    if (àTraiter.length < jeu.réponses.length) {
+      console.log(
+        `\n⚠ ÉCHANTILLON : ${àTraiter.length} réponses sur ${jeu.réponses.length}. ` +
+          'Ces chiffres servent à vérifier le harnais, pas à décider.',
+      )
+    }
+
     const observations: ObservationRéponse[] = []
     const échecs: { réponse: string; raison: string }[] = []
 
-    for (const réponse of jeu.réponses) {
+    for (const réponse of àTraiter) {
       try {
         observations.push(await évaluerRéponse(réponse, analyzer))
       } catch (error) {
@@ -400,7 +413,7 @@ fausserait la décision la plus importante du projet, celle du fournisseur.
     if (échecs.length > 0) {
       console.log(
         `\n⚠ ${échecs.length} réponse(s) en échec, EXCLUES des métriques ` +
-          `(${((échecs.length / jeu.réponses.length) * 100).toFixed(1)} % du jeu) :`,
+          `(${((échecs.length / àTraiter.length) * 100).toFixed(1)} % des réponses traitées) :`,
       )
       for (const é of échecs.slice(0, 10)) console.log(`   ${é.réponse} — ${é.raison}`)
       if (échecs.length > 10) console.log(`   … et ${échecs.length - 10} autre(s).`)

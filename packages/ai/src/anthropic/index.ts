@@ -30,7 +30,13 @@
  * construction : celui-ci ne peut plus produire de zéro à cause de nous.
  */
 
-import { Anthropic } from '@anthropic-ai/sdk'
+import {
+  Anthropic,
+  APIConnectionError,
+  APIError,
+  InternalServerError,
+  RateLimitError,
+} from '@anthropic-ai/sdk'
 import type {
   Message,
   MessageCreateParamsNonStreaming,
@@ -424,6 +430,39 @@ function verifierArret(message: Message, modele: string): void {
   }
 }
 
+/**
+ * Traduit une erreur du SDK, en distinguant ce qui mérite une nouvelle tentative
+ * de ce qui n'en mérite aucune.
+ *
+ * La distinction n'est pas cosmétique. Un solde de crédit épuisé, une clé
+ * révoquée, un modèle inconnu : trois erreurs qu'aucune reprise ne corrige. Sans
+ * ce tri, la file de travaux rejoue la tâche trois fois, et le SDK ajoute ses
+ * propres reprises — jusqu'à neuf appels pour un échec certain.
+ *
+ * Le tri se fait sur les classes typées du SDK, jamais sur le texte du message :
+ * un message d'erreur change sans préavis, une classe non.
+ */
+function erreurFournisseur(erreur: unknown): ProviderError {
+  if (erreur instanceof RateLimitError) {
+    return new ProviderError('anthropic', `Débit dépassé : ${erreur.message}`, true)
+  }
+  if (erreur instanceof InternalServerError) {
+    return new ProviderError('anthropic', `Service indisponible : ${erreur.message}`, true)
+  }
+  if (erreur instanceof APIConnectionError) {
+    return new ProviderError('anthropic', `Connexion en échec : ${erreur.message}`, true)
+  }
+  if (erreur instanceof APIError) {
+    return new ProviderError(
+      'anthropic',
+      `Requête refusée (${erreur.status ?? '?'}) : ${erreur.message}`,
+      false,
+    )
+  }
+  const details = erreur instanceof Error ? erreur.message : String(erreur)
+  return new ProviderError('anthropic', `Appel au modèle en échec : ${details}`, true)
+}
+
 /** Total des jetons d'entrée facturés, écriture et lecture de cache comprises. */
 function jetonsEntree(message: Message): number {
   const u = message.usage
@@ -478,8 +517,7 @@ export function createAnthropicTextAnalysisProvider(
             output_config: { effort, format: { type: 'json_schema', schema: SCHEMA_ANALYSE } },
           })
         } catch (erreur) {
-          const details = erreur instanceof Error ? erreur.message : String(erreur)
-          throw new ProviderError('anthropic', `Appel au modèle en échec : ${details}`, true)
+          throw erreurFournisseur(erreur)
         }
 
         jetonsIn += jetonsEntree(message)

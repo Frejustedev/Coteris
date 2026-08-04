@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import { APIError, RateLimitError } from '@anthropic-ai/sdk'
 import type { Message } from '@anthropic-ai/sdk/resources/messages'
 
 import { createAnthropicTextAnalysisProvider, type DiagnosticAnalyse } from './index'
@@ -300,6 +301,36 @@ describe('createAnthropicTextAnalysisProvider', () => {
       name: 'ProviderError',
       retryable: true,
     })
+  })
+
+  it('distingue une erreur rejouable d\'une erreur définitive', async () => {
+    // Un solde épuisé ou une clé révoquée reviennent en 400. Les traiter comme
+    // rejouables ferait rejouer la tâche trois fois par la file de travaux, plus
+    // les reprises du SDK — jusqu'à neuf appels pour un échec certain.
+    const erreurDe = (classe: new (...args: never[]) => Error, message: string, status?: number): Error => {
+      const e = Object.create(classe.prototype) as Error & { status?: number }
+      Object.defineProperty(e, 'message', { value: message, enumerable: false })
+      if (status !== undefined) e.status = status
+      return e
+    }
+
+    const clientQuiLeve = (erreur: Error): { messages: { create(): Promise<Message> } } => ({
+      messages: {
+        create(): Promise<Message> {
+          throw erreur
+        },
+      },
+    })
+
+    const définitif = createAnthropicTextAnalysisProvider({
+      client: clientQuiLeve(erreurDe(APIError, 'Your credit balance is too low', 400)) as never,
+    })
+    await expect(définitif.analyze(demande())).rejects.toMatchObject({ retryable: false })
+
+    const rejouable = createAnthropicTextAnalysisProvider({
+      client: clientQuiLeve(erreurDe(RateLimitError, 'rate limited', 429)) as never,
+    })
+    await expect(rejouable.analyze(demande())).rejects.toMatchObject({ retryable: true })
   })
 
   it('classe une copie vierge sans inventer de preuve', async () => {

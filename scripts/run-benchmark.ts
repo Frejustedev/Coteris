@@ -76,6 +76,12 @@ const PIPELINES: Record<string, { description: string; analyzer: () => TextAnaly
       createAnthropicTextAnalysisProvider({
         apiKey: process.env['AI_API_KEY'] ?? process.env['ANTHROPIC_API_KEY'] ?? '',
         model: process.env['AI_MODEL'] ?? MODELE_PAR_DEFAUT,
+        // Le raisonnement est facturé comme de la sortie, et c'est lui qui
+        // domine la facture. L'effort est donc le principal levier de coût du
+        // banc d'essai — et un paramètre à balayer, pas une constante : la
+        // question « quelle qualité pour quel prix » ne se tranche que par
+        // mesure sur le même échantillon.
+        effort: EFFORT,
         onDiagnostic: (d) => diagnostics.push(d),
       }),
   },
@@ -87,6 +93,20 @@ function argument(nom: string): string | undefined {
   const index = process.argv.indexOf(`--${nom}`)
   return index === -1 ? undefined : process.argv[index + 1]
 }
+
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+type Effort = (typeof EFFORTS)[number]
+
+function effortDemandé(): Effort {
+  const brut = argument('effort') ?? 'high'
+  const trouvé = EFFORTS.find((e) => e === brut)
+  if (!trouvé) {
+    throw new Error(`Effort « ${brut} » inconnu. Valeurs : ${EFFORTS.join(', ')}.`)
+  }
+  return trouvé
+}
+
+const EFFORT = effortDemandé()
 
 // --- Exécution --------------------------------------------------------------------------
 
@@ -359,6 +379,7 @@ fausserait la décision la plus importante du projet, celle du fournisseur.
   console.log(`Réponses : ${jeu.réponses.length}`)
   console.log(`Portée : ${PORTÉE_LABELS[portée]}`)
   console.log(`Comparaison : ${GRANULARITÉ_LABELS[granularité]}`)
+  console.log(`Effort : ${EFFORT}`)
 
   const demandé = argument('pipeline')
   const àÉvaluer = demandé ? [demandé] : Object.keys(PIPELINES)

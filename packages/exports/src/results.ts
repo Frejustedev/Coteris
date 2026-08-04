@@ -126,8 +126,46 @@ export function buildAuditCsv(
  */
 export const ACTIONS_LISIBLES = LIBELLÉS_ACTIONS
 
-/** Nom de fichier proposé, sans caractère problématique. */
-export function exportFileName(titreÉpreuve: string, genre: string, date: Date): string {
+/** Formats de fichier produits par le dépôt. */
+export type ExtensionExport = 'csv' | 'pdf' | 'xlsx'
+
+const TYPES_MIME: Record<ExtensionExport, string> = {
+  csv: 'text/csv; charset=utf-8',
+  pdf: 'application/pdf',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+}
+
+/**
+ * Type MIME déduit du nom de fichier enregistré.
+ *
+ * La route de téléchargement servait tout en `text/csv` avec `nosniff`, ce qui
+ * interdit au navigateur tout rattrapage : un corrigé se serait ouvert dans un
+ * tableur, un classeur en texte brut. Le nom de fichier est la seule source de
+ * vérité disponible à ce moment-là — d'où cette dérivation, et non un second
+ * champ à tenir cohérent.
+ */
+export function contentTypeForFileName(fileName: string): string {
+  const point = fileName.lastIndexOf('.')
+  const extension = point === -1 ? '' : fileName.slice(point + 1).toLowerCase()
+  return (
+    TYPES_MIME[extension as ExtensionExport] ??
+    // Inconnu : type générique. Servir du `text/csv` par défaut ferait passer un
+    // binaire pour du texte, ce qui est pire que de ne rien affirmer.
+    'application/octet-stream'
+  )
+}
+
+/**
+ * Nom de fichier proposé, sans caractère problématique.
+ *
+ * @param extension Défaut `csv`, qui préserve le comportement historique.
+ */
+export function exportFileName(
+  titreÉpreuve: string,
+  genre: string,
+  date: Date,
+  extension: ExtensionExport = 'csv',
+): string {
   const base = titreÉpreuve
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
@@ -137,5 +175,5 @@ export function exportFileName(titreÉpreuve: string, genre: string, date: Date)
     .toLowerCase()
 
   const jour = formatDateCsv(date).slice(0, 10)
-  return `coteris-${genre}-${base || 'epreuve'}-${jour}.csv`
+  return `coteris-${genre}-${base || 'epreuve'}-${jour}.${extension}`
 }

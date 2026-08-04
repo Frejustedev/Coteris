@@ -17,7 +17,8 @@
   },
   "dependencies": {
     "@coteris/database": "workspace:*",
-    "@coteris/shared": "workspace:*"
+    "@coteris/shared": "workspace:*",
+    "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

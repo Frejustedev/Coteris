@@ -7,3 +7,5 @@
 
 export * from './csv'
 export * from './results'
+export * from './winansi'
+export * from './corrige-annote'

@@ -20,13 +20,21 @@ import {
   gradingEvidence,
   gradingRuns,
 } from '@coteris/database'
-import { gradeAnswer } from '@coteris/pipeline'
+import { analysisRequestFor, gradeAnswer } from '@coteris/pipeline'
 import { parsePayload, TASKS, type AnalyzeRegionPayload } from '@coteris/jobs'
-import type { OcrResult, OcrWord } from '@coteris/ai'
+import {
+  checkQuota,
+  computeCost,
+  estimateUsageFor,
+  QuotaExceededError,
+  type OcrResult,
+  type OcrWord,
+} from '@coteris/ai'
 import type { Millipoints } from '@coteris/shared'
 import type { QuestionGradingRules, RubricCriterion } from '@coteris/grading'
 
 import type { WorkerContext } from '../context'
+import { comptabiliserAppel, lireQuota } from '../quota'
 
 export async function analyserReponse(brut: unknown, ctx: WorkerContext): Promise<void> {
   const payload = parsePayload(TASKS.ANALYZE_REGION, brut) as AnalyzeRegionPayload
@@ -65,6 +73,69 @@ export async function analyserReponse(brut: unknown, ctx: WorkerContext): Promis
     engineVersion: contexte.ocrRunId ? 'transcription-courante' : 'lecture-directe',
   }
 
+  // --- Coupe-circuit budgétaire, AVANT l'appel ------------------------------
+  //
+  // Compter après ne fait que constater le dépassement de facture. L'estimation
+  // surestime volontairement : un garde-fou qui sous-estime laisse passer
+  // précisément ce qu'il devait arrêter.
+  const maintenant = new Date()
+  const entree = {
+    questionPrompt: question.prompt,
+    answerKeyText: contexte.answerKeyText,
+    language: 'fr',
+    rubricLocked: true,
+    criteria: criteres.map((c) => versCritereMoteur(c, question.id)),
+    acceptableAnswersByCriterion: formulations,
+    questionRules: regles,
+    ocr,
+    forceSecondPass: payload.forceSecondPass,
+  }
+
+  const quota = await lireQuota(ctx, payload.organizationId, contexte.assessmentId, maintenant)
+  if (quota === null) {
+    // Une organisation sans quota configuré n'est pas bloquée : ajouter ce
+    // garde-fou ne doit pas se traduire par une panne générale. Mais l'absence
+    // se voit, à chaque appel.
+    console.warn(
+      `[quota] organisation ${payload.organizationId} sans plafond configuré — ` +
+        "appel autorisé sans vérification budgétaire.",
+    )
+  } else {
+    const estimation = estimateUsageFor(
+      analysisRequestFor(entree),
+      ctx.analyzer.name,
+      ctx.analyzerModel,
+    )
+    const décision = checkQuota(quota, computeCost(estimation))
+    if (!décision.allowed) {
+      // Le refus laisse une trace. Sans elle, une organisation dont le plafond
+      // bloque tout n'aurait dans ses journaux que des tâches en échec, sans
+      // jamais la raison.
+      await comptabiliserAppel(
+        ctx,
+        {
+          organizationId: payload.organizationId,
+          assessmentId: contexte.assessmentId,
+          usage: {
+            provider: ctx.analyzer.name,
+            model: ctx.analyzerModel,
+            inputTokens: null,
+            outputTokens: null,
+            pageCount: null,
+            durationMs: null,
+          },
+          promptVersion: ctx.promptVersion,
+          status: 'skipped_quota',
+          error: décision.reason,
+        },
+        maintenant,
+      )
+      // Lever plutôt que proposer zéro : une tâche en échec se voit, un zéro
+      // enregistré et scellé dans le journal d'audit passe pour une correction.
+      throw new QuotaExceededError(décision)
+    }
+  }
+
   // Le chronomètre démarre AVANT l'appel. Placé après, il mesurait la durée de
   // la transaction d'écriture et non celle de la correction : avec le simulateur
   // à 8 ms personne ne s'en apercevait, avec un appel réseau de plusieurs
@@ -72,22 +143,50 @@ export async function analyserReponse(brut: unknown, ctx: WorkerContext): Promis
   // précis où l'on cherche à mesurer la latence du fournisseur.
   const debut = Date.now()
 
-  const resultat = await gradeAnswer(
-    {
-      questionPrompt: question.prompt,
-      answerKeyText: contexte.answerKeyText,
-      language: 'fr',
-      rubricLocked: true,
-      criteria: criteres.map((c) => versCritereMoteur(c, question.id)),
-      acceptableAnswersByCriterion: formulations,
-      questionRules: regles,
-      ocr,
-      forceSecondPass: payload.forceSecondPass,
-    },
-    ctx.analyzer,
-  )
+  let resultat
+  try {
+    resultat = await gradeAnswer(entree, ctx.analyzer)
+  } catch (erreur) {
+    // Un appel qui échoue après avoir consommé des jetons est facturé par le
+    // fournisseur. Ne comptabiliser que les succès ferait diverger le plafond de
+    // la facture — et c'est justement sur les échecs répétés que la dépense
+    // s'emballe, puisque la tâche est rejouée.
+    await comptabiliserAppel(
+      ctx,
+      {
+        organizationId: payload.organizationId,
+        assessmentId: contexte.assessmentId,
+        usage: {
+          provider: ctx.analyzer.name,
+          model: ctx.analyzerModel,
+          inputTokens: null,
+          outputTokens: null,
+          pageCount: null,
+          durationMs: Date.now() - debut,
+        },
+        promptVersion: ctx.promptVersion,
+        status: 'failed',
+        error: erreur instanceof Error ? erreur.message.slice(0, 2000) : String(erreur),
+      },
+      maintenant,
+    )
+    throw erreur
+  }
 
-  const maintenant = new Date()
+  if (resultat.usage !== null) {
+    await comptabiliserAppel(
+      ctx,
+      {
+        organizationId: payload.organizationId,
+        assessmentId: contexte.assessmentId,
+        usage: resultat.usage,
+        promptVersion: ctx.promptVersion,
+        status: 'success',
+        error: null,
+      },
+      maintenant,
+    )
+  }
 
   await ctx.db.transaction(async (tx) => {
     const [run] = await tx
@@ -214,6 +313,7 @@ interface CritereChargé {
 
 interface ContexteAnalyse {
   regionId: string
+  assessmentId: string
   question: { id: string; number: string; prompt: string; maxPoints: number }
   rubric: { versionId: string; answerKeyVersionId: string }
   criteres: CritereChargé[]
@@ -233,6 +333,7 @@ async function chargerContexte(
       ar.id                    AS region_id,
       ar.cropped_image_key     AS image_key,
       q.id                     AS question_id,
+      q.assessment_id          AS assessment_id,
       q.number,
       q.prompt,
       q.max_points,
@@ -326,6 +427,7 @@ async function chargerContexte(
 
   return {
     regionId: String(base['region_id']),
+    assessmentId: String(base['assessment_id']),
     question: {
       id: String(base['question_id']),
       number: String(base['number']),

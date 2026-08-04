@@ -23,6 +23,15 @@ export interface WorkerContext {
   readonly storage: StorageDriver
   readonly ocr: OcrProvider
   readonly analyzer: TextAnalysisProvider
+  /**
+   * Modèle effectivement appelé.
+   *
+   * Il n'est nulle part ailleurs : `TextAnalysisProvider` n'expose qu'un `name`,
+   * et le modèle n'apparaît que dans l'usage rapporté APRÈS l'appel. Or le
+   * coupe-circuit doit estimer un coût AVANT, et une estimation a besoin du
+   * tarif, donc du modèle.
+   */
+  readonly analyzerModel: string
   readonly auditSecret: string
   readonly promptVersion: number
   readonly close: () => Promise<void>
@@ -84,11 +93,16 @@ export function createContext(): WorkerContext {
     )
   }
 
+  const analyzerModel =
+    fournisseurIa === 'anthropic'
+      ? (process.env['AI_MODEL'] ?? MODELE_PAR_DEFAUT)
+      : 'mock-analysis'
+
   const analyzer =
     fournisseurIa === 'anthropic'
       ? createAnthropicTextAnalysisProvider({
           apiKey: requis('AI_API_KEY'),
-          model: process.env['AI_MODEL'] ?? MODELE_PAR_DEFAUT,
+          model: analyzerModel,
         })
       : fournisseurIa === 'mock'
         ? createMockTextAnalysisProvider()
@@ -117,6 +131,7 @@ export function createContext(): WorkerContext {
     storage,
     ocr: createMockOcrProvider(),
     analyzer,
+    analyzerModel,
     auditSecret,
     promptVersion: Number(process.env['AI_PROMPT_VERSION'] ?? 1),
     close: () => client.end(),

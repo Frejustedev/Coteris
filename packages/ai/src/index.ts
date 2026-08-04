@@ -9,6 +9,7 @@
 export * from './analysis'
 export * from './providers'
 export * from './cost'
+export * from './estimate'
 export {
   createMockOcrProvider,
   createMockTextAnalysisProvider,

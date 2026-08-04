@@ -65,6 +65,13 @@ export async function analyserReponse(brut: unknown, ctx: WorkerContext): Promis
     engineVersion: contexte.ocrRunId ? 'transcription-courante' : 'lecture-directe',
   }
 
+  // Le chronomètre démarre AVANT l'appel. Placé après, il mesurait la durée de
+  // la transaction d'écriture et non celle de la correction : avec le simulateur
+  // à 8 ms personne ne s'en apercevait, avec un appel réseau de plusieurs
+  // secondes la colonne aurait rapporté quelques millisecondes — au moment
+  // précis où l'on cherche à mesurer la latence du fournisseur.
+  const debut = Date.now()
+
   const resultat = await gradeAnswer(
     {
       questionPrompt: question.prompt,
@@ -80,7 +87,6 @@ export async function analyserReponse(brut: unknown, ctx: WorkerContext): Promis
     ctx.analyzer,
   )
 
-  const debut = Date.now()
   const maintenant = new Date()
 
   await ctx.db.transaction(async (tx) => {
@@ -281,9 +287,22 @@ async function chargerContexte(
   `)) as unknown as Record<string, unknown>[]
 
   let transcription = tv ? String(tv['text']) : ''
+
+  // Pas de passe OCR jointe = le texte n'a pas été LU, il a été saisi ou corrigé
+  // à la main. Il n'y a donc aucune incertitude de lecture, et la confiance vaut 1.
+  //
+  // L'ancienne valeur de 0,9 était un plafond fantôme. Dans le calcul de
+  // confiance, l'OCR est un plafond MULTIPLICATIF : avec evidenceCoverage à 1 —
+  // ce qu'il vaut structurellement, le schéma imposant déjà au moins un extrait —
+  // la formule se réduit à `ocr × (0,6·matchClarity + 0,4)`. À 0,9, même une
+  // netteté parfaite plafonne à 0,900 et une netteté de 0,99 tombe à 0,895 :
+  // le seuil vert de 90 % devenait inatteignable sauf à renvoyer exactement 1,0.
+  // Autrement dit, sur des réponses saisies, un fournisseur honnête envoyait
+  // TOUTES les copies en relecture attentive, et seul un fournisseur
+  // systématiquement optimiste produisait du vert.
   let ocrConfidence =
     tv?.['confidence'] === null || tv?.['confidence'] === undefined
-      ? 0.9
+      ? 1
       : Number(tv['confidence'])
   const ocrRunId = tv?.['ocr_run_id'] ? String(tv['ocr_run_id']) : null
   const transcriptionVersionId = tv ? String(tv['id']) : null

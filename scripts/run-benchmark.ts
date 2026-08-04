@@ -29,7 +29,12 @@ import {
   type RéponseÉvaluation,
 } from '@coteris/benchmark'
 import {
+  computeCost,
+  createAnthropicTextAnalysisProvider,
   createMockTextAnalysisProvider,
+  microEur,
+  MODELE_PAR_DEFAUT,
+  type DiagnosticAnalyse,
   type TextAnalysisProvider,
 } from '@coteris/ai'
 import { gradeAnswer } from '@coteris/pipeline'
@@ -46,12 +51,33 @@ import type { QuestionGradingRules, RubricCriterion } from '@coteris/grading'
  * éclairer. Les déclarer ici sans les brancher serait mentir sur ce qui est
  * mesurable.
  */
+/**
+ * Réparations et anomalies rapportées par le fournisseur sur l'exécution en cours.
+ *
+ * Un fournisseur qui hallucine régulièrement ses citations serait autrement
+ * indiscernable d'un fournisseur exact : ses extraits fabriqués sont retirés en
+ * silence, ses critères sans preuve rétrogradés en absents, et seul le rappel
+ * baisserait — sans que rien n'en désigne la cause.
+ */
+const diagnostics: DiagnosticAnalyse[] = []
+
 const PIPELINES: Record<string, { description: string; analyzer: () => TextAnalysisProvider }> = {
   mock: {
     description:
       'Correspondance lexicale sur les formulations acceptables. Sert de référence basse ' +
       'et de vérification du harnais, pas de candidat sérieux.',
     analyzer: () => createMockTextAnalysisProvider(),
+  },
+  anthropic: {
+    description:
+      "Analyse par modèle de langage, sorties structurées et raisonnement adaptatif. " +
+      'Exige AI_API_KEY ; chaque exécution est facturée.',
+    analyzer: () =>
+      createAnthropicTextAnalysisProvider({
+        apiKey: process.env['AI_API_KEY'] ?? process.env['ANTHROPIC_API_KEY'] ?? '',
+        model: process.env['AI_MODEL'] ?? MODELE_PAR_DEFAUT,
+        onDiagnostic: (d) => diagnostics.push(d),
+      }),
   },
 }
 
@@ -142,7 +168,13 @@ async function évaluerRéponse(
       ocr: {
         fullText: réponse.transcriptionRéférence,
         words: [],
-        confidence: 0.95,
+        // La transcription de référence n'a pas été LUE : elle est saisie. Il n'y
+        // a donc aucune incertitude de lecture. Toute valeur inférieure à 1
+        // serait un plafond fantôme : dans le calcul de confiance, l'OCR est un
+        // plafond MULTIPLICATIF, et un 0,95 arbitraire écrêterait la confiance de
+        // tous les pipelines de la même façon — donc fausserait la comparaison
+        // entre eux, qui est l'unique objet de ce banc d'essai.
+        confidence: 1,
         engineVersion: 'reference',
       },
     },
@@ -162,9 +194,10 @@ async function évaluerRéponse(
     niveauConfiance: résultat.confidenceLevel,
     aDemandéValidation: résultat.needsCarefulReview,
     duréeMs,
-    // Le simulateur ne coûte rien. Avec un fournisseur réel, le coût viendra de
-    // `ai_runs`.
-    coûtMicroEur: 0,
+    // Le coût vient de la consommation rapportée par le fournisseur. Laisser un
+    // zéro en dur ferait afficher « 0,0000 € par copie » pour un modèle facturé,
+    // alors que le protocole fait du coût par copie un critère de décision.
+    coûtMicroEur: résultat.usage === null ? microEur(0) : computeCost(résultat.usage),
     pages: 1,
   }
 }
@@ -339,9 +372,59 @@ fausserait la décision la plus importante du projet, celle du fournisseur.
     }
 
     const analyzer = pipeline.analyzer()
+    diagnostics.length = 0
+
     const observations: ObservationRéponse[] = []
+    const échecs: { réponse: string; raison: string }[] = []
+
     for (const réponse of jeu.réponses) {
-      observations.push(await évaluerRéponse(réponse, analyzer))
+      try {
+        observations.push(await évaluerRéponse(réponse, analyzer))
+      } catch (error) {
+        // Un fournisseur réel échoue : refus du modèle, sortie non conforme
+        // après reprise, coupure réseau. Sans ce filet, une seule réponse en
+        // échec interromprait une exécution de plusieurs centaines d'appels
+        // déjà facturés.
+        //
+        // L'échec est COMPTÉ ET EXCLU, jamais converti en note de zéro : le
+        // compter comme un zéro reviendrait à imputer au fournisseur une erreur
+        // de correction là où il a refusé de conclure. C'est précisément la
+        // confusion que ce banc d'essai doit éviter.
+        échecs.push({
+          réponse: `${réponse.submissionId}/${réponse.questionId}`,
+          raison: error instanceof Error ? error.message.split('\n')[0] ?? '' : String(error),
+        })
+      }
+    }
+
+    if (échecs.length > 0) {
+      console.log(
+        `\n⚠ ${échecs.length} réponse(s) en échec, EXCLUES des métriques ` +
+          `(${((échecs.length / jeu.réponses.length) * 100).toFixed(1)} % du jeu) :`,
+      )
+      for (const é of échecs.slice(0, 10)) console.log(`   ${é.réponse} — ${é.raison}`)
+      if (échecs.length > 10) console.log(`   … et ${échecs.length - 10} autre(s).`)
+      console.log(
+        '  Un taux d’échec élevé disqualifie un fournisseur autant qu’un mauvais accord :\n' +
+          "  les métriques ci-dessous ne portent que sur les réponses qu'il a acceptées.",
+      )
+    }
+
+    if (diagnostics.length > 0) {
+      const parType = new Map<string, number>()
+      for (const d of diagnostics) parType.set(d.type, (parType.get(d.type) ?? 0) + 1)
+      console.log('\nRéparations appliquées à la sortie du modèle :')
+      for (const [type, n] of [...parType].sort((a, b) => b[1] - a[1])) {
+        console.log(`   ${type.padEnd(22)} ${n}`)
+      }
+      const fabriques = parType.get('extrait_fabrique') ?? 0
+      if (fabriques > 0) {
+        console.log(
+          `  ⚠ ${fabriques} citation(s) introuvable(s) dans la copie. Une preuve inventée est\n` +
+            "  le mode d'erreur le plus dangereux du produit : elle est indiscernable d'une\n" +
+            "  vraie preuve à l'œil nu.",
+        )
+      }
     }
 
     afficher(évaluer(nom, observations, portée, granularité))

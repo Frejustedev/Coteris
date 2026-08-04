@@ -41,6 +41,7 @@ import {
   type AnalysisRequest,
   type AnalysisResult,
   type OcrResult,
+  type ProviderUsage,
   type TextAnalysisProvider,
 } from '@coteris/ai'
 
@@ -84,6 +85,16 @@ export interface GradeAnswerOutcome {
   readonly needsSecondPass: boolean
   readonly warnings: readonly string[]
   readonly steps: readonly PipelineStep[]
+  /**
+   * Consommation rapportée par le fournisseur, ou `null` si aucun appel n'a eu
+   * lieu — copie blanche, transcription trop douteuse.
+   *
+   * Sans elle, jetons, durée et modèle sont perdus dès la déstructuration, et le
+   * coût par copie — l'un des critères de décision du banc d'essai — ne peut pas
+   * être calculé. Un rapport qui annonce 0 € pour un modèle facturé est un
+   * chiffre faux mais crédible.
+   */
+  readonly usage: ProviderUsage | null
 }
 
 export class RubricNotLockedError extends Error {
@@ -174,14 +185,23 @@ export async function gradeAnswer(
     })),
   }
 
-  const { result: brut } = await analyzer.analyze(request)
+  const { result: brut, usage } = await analyzer.analyze(request)
 
   const parsed = analysisResultSchema.safeParse(brut)
   if (!parsed.success) {
-    steps.push({ step: 'analysis', detail: 'Sortie du modèle non conforme au schéma.' })
+    // Le détail de l'échec est journalisé : sans lui, on sait que l'analyse a
+    // été rejetée mais pas quel champ a fauté, et l'invite reste incorrigeable
+    // à partir de la production.
+    const défauts = parsed.error.issues
+      .slice(0, 5)
+      .map((i) => `${i.path.join('.') || 'racine'} : ${i.message}`)
+    steps.push({
+      step: 'analysis',
+      detail: `Sortie du modèle non conforme au schéma — ${défauts.join(' ; ')}`,
+    })
     return inconclusive(input, criterionIds, steps, [
       "L'analyse produite n'est pas exploitable. Une correction manuelle est requise.",
-    ])
+    ], usage)
   }
 
   const analysis = parsed.data
@@ -301,6 +321,7 @@ export async function gradeAnswer(
     needsSecondPass,
     warnings,
     steps,
+    usage,
   }
 }
 
@@ -350,12 +371,19 @@ function toAssessments(
   return assessments
 }
 
-/** Sortie sans proposition de points, quand rien de fiable ne peut être conclu. */
+/**
+ * Sortie sans proposition de points, quand rien de fiable ne peut être conclu.
+ *
+ * @param usage Consommation de l'appel qui a mené ici, s'il a eu lieu. Un rejet
+ *   après appel a bel et bien coûté de l'argent : le passer sous silence ferait
+ *   sous-estimer le coût réel d'exactement les cas les plus problématiques.
+ */
 function inconclusive(
   input: GradeAnswerInput,
   criterionIds: readonly string[],
   steps: PipelineStep[],
   warnings: string[],
+  usage: ProviderUsage | null = null,
 ): GradeAnswerOutcome {
   const analysis = inconclusiveAnalysis(criterionIds)
   const assessments = toAssessments(analysis, input.criteria)
@@ -370,5 +398,6 @@ function inconclusive(
     needsSecondPass: false,
     warnings,
     steps,
+    usage,
   }
 }

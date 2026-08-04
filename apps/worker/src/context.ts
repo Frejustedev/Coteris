@@ -9,7 +9,12 @@
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 
-import { createMockOcrProvider, createMockTextAnalysisProvider } from '@coteris/ai'
+import {
+  createAnthropicTextAnalysisProvider,
+  createMockOcrProvider,
+  createMockTextAnalysisProvider,
+  MODELE_PAR_DEFAUT,
+} from '@coteris/ai'
 import type { OcrProvider, TextAnalysisProvider } from '@coteris/ai'
 import { createStorage, type StorageDriver } from '@coteris/storage'
 
@@ -58,17 +63,50 @@ export function createContext(): WorkerContext {
       : { driver: 'local', path: requis('STORAGE_LOCAL_PATH') },
   )
 
-  // Seuls les fournisseurs simulés sont implémentés. Les autres seront ajoutés
-  // après la phase de banc d'essai, qui doit décider lequel retenir — choisir
-  // avant de mesurer serait exactement ce que le cahier des charges interdit.
-  const fournisseurIa = process.env['AI_PROVIDER'] ?? 'mock'
+  // AI_PROVIDER est REQUIS, sans repli silencieux.
+  //
+  // Un `?? 'mock'` ferait démarrer le worker normalement et corriger de vraies
+  // copies par correspondance lexicale, sans un seul message. Le scénario n'est
+  // pas théorique : en production le worker est relancé par cron via
+  // scripts/worker-watchdog.sh, qui n'exporte aucune variable, et aucun code du
+  // dépôt ne lit de fichier .env. Mieux vaut un démarrage refusé qu'une épreuve
+  // entière corrigée par le simulateur à l'insu de tous.
+  const fournisseurIa = requis('AI_PROVIDER')
   const fournisseurOcr = process.env['OCR_PROVIDER'] ?? 'mock'
-  if (fournisseurIa !== 'mock' || fournisseurOcr !== 'mock') {
+
+  // L'OCR reste au simulateur : le choix d'un moteur de lecture ne peut pas être
+  // fait avant d'avoir mesuré sur de vraies copies manuscrites, et le banc
+  // d'essai refuse explicitement de trancher sur des transcriptions parfaites.
+  if (fournisseurOcr !== 'mock') {
     throw new Error(
-      `Fournisseur « ${fournisseurIa} / ${fournisseurOcr} » non implémenté. ` +
-        'Seul le fournisseur simulé existe à ce stade ; voir docs/benchmark-protocol.md.',
+      `Fournisseur OCR « ${fournisseurOcr} » non implémenté. Aucun moteur de lecture n'a ` +
+        'encore été mesuré ; voir docs/benchmark-protocol.md.',
     )
   }
+
+  const analyzer =
+    fournisseurIa === 'anthropic'
+      ? createAnthropicTextAnalysisProvider({
+          apiKey: requis('AI_API_KEY'),
+          model: process.env['AI_MODEL'] ?? MODELE_PAR_DEFAUT,
+        })
+      : fournisseurIa === 'mock'
+        ? createMockTextAnalysisProvider()
+        : (() => {
+            throw new Error(
+              `Fournisseur d'analyse « ${fournisseurIa} » non implémenté. ` +
+                "Valeurs acceptées : mock, anthropic.",
+            )
+          })()
+
+  // Le fournisseur effectivement retenu est journalisé au démarrage : sans cela,
+  // rien ne distingue un worker qui corrige avec un modèle d'un worker qui
+  // corrige avec le simulateur.
+  console.warn(
+    `[worker] analyse : ${fournisseurIa}` +
+      (fournisseurIa === 'anthropic' ? ` (${process.env['AI_MODEL'] ?? MODELE_PAR_DEFAUT})` : '') +
+      ` · lecture : ${fournisseurOcr}`,
+  )
 
   return {
     // Aucun schéma relationnel n'est passé : le worker n'utilise que du SQL
@@ -78,7 +116,7 @@ export function createContext(): WorkerContext {
     db: drizzle(client, { casing: 'snake_case' }),
     storage,
     ocr: createMockOcrProvider(),
-    analyzer: createMockTextAnalysisProvider(),
+    analyzer,
     auditSecret,
     promptVersion: Number(process.env['AI_PROMPT_VERSION'] ?? 1),
     close: () => client.end(),

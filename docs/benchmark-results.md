@@ -1,5 +1,105 @@
 # Résultats du banc d'essai
 
+## Mesure du 4 août 2026 — `claude-opus-5`, effort medium
+
+**Première mesure du produit lui-même**, et non plus de son plancher. 208 réponses,
+effectif au-dessus du seuil de significativité du protocole.
+
+### Conditions
+
+| | |
+|---|---|
+| Date | 2026-08-04 |
+| Jeu | GSS4408 EC1 — 13 copies, 16 questions, 208 réponses |
+| Pipeline | **A** — analyse textuelle, `claude-opus-5`, sorties structurées, raisonnement adaptatif |
+| Effort | `medium` |
+| **Portée** | **Borne haute** — réponses saisies, donc sans incertitude de lecture |
+| Granularité de la référence | par question |
+| Accord entre correcteurs | **non mesuré** — un seul correcteur |
+| Échecs | **0** |
+| Réparations appliquées à la sortie du modèle | **0** |
+
+### Résultats
+
+| Métrique | Étalon lexical | **`claude-opus-5`** |
+|---|---|---|
+| Accord IA-humain | 24,0 % | **77,9 %** |
+| Précision de détection | 74,4 % | **100,0 %** |
+| Rappel de détection | 19,6 % | **74,2 %** |
+| **Faux positifs** | 11 | **0** |
+| Faux négatifs | 131 | **42** |
+| Erreur absolue moyenne | 0,675 pt | **0,177 pt** |
+| Biais | −0,360 pt | **−0,148 pt** |
+| Erreur maximale | 2,000 pt | **1,750 pt** |
+| Notes exactes | 24,0 % | **71,6 %** |
+| Cas verts / orange / rouges | 43 / 154 / 11 | **117 / 59 / 32** |
+| Recours à la validation attentive | 79,3 % | **43,8 %** |
+| **Fiabilité des verts** | 37,2 % | **95,7 %** (5 des 117 corrigés) |
+| Durée moyenne par réponse | 12 ms | **6 134 ms** |
+| **Coût par copie** | 0,0000 € | **0,5097 €** |
+
+### Ce que ces chiffres disent
+
+**Zéro faux positif sur 208 réponses.** C'est le résultat le plus important, parce
+que c'est la catégorie la plus grave : des points accordés à tort sur une copie
+présentée comme sûre. Le modèle ne se montre jamais plus généreux que le
+correcteur. Le biais reste négatif — il est encore trop sévère, 2,4 fois moins
+que l'étalon.
+
+**La fiabilité des verts passe de 37,2 % à 95,7 %.** Cinq cas verts sur 117 ont
+été corrigés par l'humain. C'est un changement de nature, pas de degré.
+
+**Et pourtant, la validation groupée reste désactivée.** Le protocole fixe le
+seuil à 98 %. À 95,7 %, activer la validation en masse publierait environ une
+note fausse toutes les vingt-trois copies présentées comme sûres. L'écart entre
+95,7 % et 98 % semble mince ; sur une épreuve de 200 copies, c'est la différence
+entre neuf notes fausses et quatre.
+
+**Le gain de temps réel est ailleurs, et il est franc.** Le recours à la
+validation attentive tombe de 79,3 % à 43,8 %. Un correcteur relit de près moins
+d'une réponse sur deux au lieu de quatre sur cinq. Toute note continue de passer
+par une validation humaine — c'est un principe du produit, pas un réglage.
+
+**Le coût par copie est de 0,51 €.** Pour une épreuve de 200 copies : 102 €. L'API
+Batches, non encore câblée, le ramènerait à environ 0,25 € — 51 € pour la même
+épreuve. C'est le chiffre qui décide d'un prix de vente.
+
+**Aucune réparation n'a été nécessaire.** Sur 208 réponses, le fournisseur n'a
+retiré aucune citation introuvable dans la copie, tronqué aucune explication,
+écarté aucun identifiant hors barème, et n'a jamais eu à redemander une analyse.
+Les garde-fous n'ont pas servi — ce qui ne les rend pas inutiles : ils sont ce qui
+permet d'affirmer qu'ils n'ont pas servi.
+
+### Ce que ces chiffres ne disent toujours pas
+
+- **Le plafond reste inconnu.** Un seul correcteur a noté ces copies. À 77,9 %
+  d'accord, on ne sait pas si le modèle frôle l'accord inter-correcteurs ou s'il
+  en est loin. Deux enseignants qui ne s'accorderaient qu'à 80 % feraient de ce
+  résultat un excellent score ; s'ils s'accordent à 95 %, il reste du chemin.
+  **Faire double-noter trois ou quatre copies reste le préalable à toute
+  interprétation fine.**
+- **On compare des totaux, pas des critères.** Le correcteur a noté par question.
+  Un modèle peut atteindre le bon total par le mauvais chemin, et ce banc ne le
+  verrait pas.
+- **Rien sur la lecture.** Les réponses sont saisies.
+  `permetDeChoisirUnOcr()` refuse ce rapport pour choisir un OCR, et il a raison.
+
+### Effort : mesuré, pas supposé
+
+Balayage sur les 16 questions de la copie 01 :
+
+| Effort | Accord | Fiabilité des verts | Coût par copie |
+|---|---|---|---|
+| `low` | 75,0 % | 88,9 % | 0,5194 € |
+| `medium` | 81,3 % | 100,0 % | 0,5484 € |
+
+**Baisser l'effort ne fait pas d'économie.** 5 % de coût en moins pour six points
+d'accord perdus. Le poste dominant n'est pas le raisonnement mais la sortie
+structurée elle-même : chaque état de critère traîne ses extraits justificatifs.
+La remise de 50 % de l'API Batches est le seul levier à la hauteur.
+
+---
+
 ## Note de correction du 4 août 2026
 
 **La mesure du 1er août portait sur un jeu corrompu.** Un audit des 208
@@ -147,7 +247,8 @@ Trois enseignements ont été appliqués :
 | Pipeline | État |
 |---|---|
 | `mock` — correspondance lexicale | ✅ mesuré, plancher établi |
-| **A** — OCR puis analyse textuelle | 🔸 fournisseur implémenté, mesure à lancer |
+| **A** — analyse textuelle seule | ✅ mesuré sur 208 réponses, `claude-opus-5` |
+| **A** — OCR puis analyse textuelle | ⬜ la moitié « OCR » exige des copies manuscrites |
 | **B** — multimodal direct | ⬜ exige des copies manuscrites |
 | **C** — hybride ciblé | ⬜ n'a d'intérêt que si B dépasse nettement A |
 

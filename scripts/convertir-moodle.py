@@ -144,48 +144,42 @@ def normaliser(texte: str) -> str:
     return texte.strip()
 
 
-def extraire_reponse(page_texte: str) -> str | None:
+ENTETE_QUESTION = re.compile(r"Question (\d+)\.\s*\((\d+(?:[,.]\d+)?) pts?\)")
+
+# Valeurs de la colonne « Action » qui CLÔTURENT une version enregistrée.
+# Comparaison exacte, jamais par préfixe : une ligne de prose d'étudiant
+# commençant par « Vu » ne doit pas interrompre sa propre réponse.
+ACTIONS_DE_CLOTURE = frozenset(
+    {
+        "Commencé",
+        "Tentative terminée",
+        "Aperçu",
+        "Vu",
+        "Terminé",
+        "Rétabli",
+        "Recommencé",
+        "Pas encore répondu",
+    }
+)
+
+
+def lignes_par_ordonnee(page, tolerance: float = 3.0) -> list[list[dict]]:
     """
-    Extrait la réponse de l'étudiant depuis l'historique Moodle.
+    Regroupe les mots d'une page en lignes, par ordonnée.
 
-    La réponse figure après « Enregistré : » dans un tableau, donc découpée sur
-    plusieurs lignes et entrelacée avec les colonnes date et état. On repart du
-    marqueur et on s'arrête à la ligne qui annonce la fin de la tentative.
+    On travaille sur les coordonnées et non sur `extract_text()`, parce que
+    l'historique Moodle est un TABLEAU à cinq colonnes. Restitué en texte plat,
+    il entrelace les cellules de gauche au milieu de la réponse de l'étudiant, et
+    tenter de les retirer ensuite par expressions régulières est une bataille
+    perdue d'avance — trois correctifs successifs l'ont montré.
     """
-    depart = page_texte.find("Enregistré :")
-    if depart == -1:
-        return None
-
-    reste = page_texte[depart + len("Enregistré :") :]
-    lignes = []
-    for ligne in reste.split("\n"):
-        if re.search(r"Tentative terminée|Terminé\s+[\d,]", ligne):
-            break
-
-        # Colonnes parasites du tableau Moodle, retirées dans cet ordre précis :
-        # la date d'abord, sinon le retrait du numéro d'étape en tête laisse
-        # traîner un « juil. 26, » orphelin au milieu de la réponse — ce qui
-        # polluerait silencieusement toutes les transcriptions.
-        ligne = re.sub(r"\d{1,2}\s+\w{3,4}\.?\s+\d{2},?", " ", ligne)
-        ligne = re.sub(r"\b\w{3,4}\.\s+\d{2},", " ", ligne)
-        ligne = re.sub(r"\d{1,2}:\d{2}:\d{2}", " ", ligne)
-        ligne = re.sub(r"^\s*\d+\s+", "", ligne)
-        ligne = re.sub(r"\b(Réponse|enregistrée|Commencé|Pas encore|répondu)\b", "", ligne)
-        if ligne.strip():
-            lignes.append(ligne.strip())
-
-    reponse = " ".join(lignes)
-
-    # Dernier filet : un mois abrégé isolé, resté d'une date dont le jour et
-    # l'année ont été retirés séparément. Il faut le point : « mai » sans point
-    # est un mot français ordinaire, « juil. » ne l'est pas.
-    reponse = re.sub(
-        r"\b(janv|févr|fév|mars|avr|juin|juil|août|sept|oct|nov|déc)\.\s*\d{0,2},?\s*",
-        " ",
-        reponse,
-    )
-
-    return normaliser(reponse) or None
+    lignes: list[list[dict]] = []
+    for mot in sorted(page.extract_words(), key=lambda m: (m["top"], m["x0"])):
+        if lignes and abs(lignes[-1][0]["top"] - mot["top"]) <= tolerance:
+            lignes[-1].append(mot)
+        else:
+            lignes.append([mot])
+    return [sorted(ligne, key=lambda m: m["x0"]) for ligne in lignes]
 
 
 NOTE = re.compile(r"Note\s*:\s*(\d+(?:[,.]\d+)?)\s*/\s*(\d+(?:[,.]\d+)?)")
@@ -224,40 +218,115 @@ def lire_corrections(chemin: Path) -> dict[int, dict]:
 
 def lire_copie(chemin: Path) -> dict[int, dict]:
     """
-    Extrait les réponses d'une copie.
+    Extrait les réponses d'une copie, en lisant l'historique comme un tableau.
 
-    Une page peut contenir **plusieurs** questions : ne prendre que la première
-    correspondance faisait disparaître Q5, présente en bas de la page de Q4. On
-    découpe donc la page à chaque en-tête de question.
+    DEUX CHOIX QUI CORRIGENT DES PERTES CONSTATÉES
+
+    **La réponse est prise dans la seule colonne « Action ».** Géométrie relevée
+    sur pièce : Étape à x≈115, Heure à x≈160, Action à x≈219, État à x≈464.
+    Moodle écrit « Enregistré : <réponse> » dans la colonne Action, et c'est
+    l'entrelacement des trois autres qui injectait un « 2 » ou un « 26, » au
+    milieu de 134 transcriptions sur 208. Découper par abscisse supprime la cause
+    au lieu d'en nettoyer les symptômes.
+
+    **La question courante est conservée d'une page à l'autre.** Le découpage
+    était strictement intra-page : une page sans en-tête « Question N. » était
+    sautée en silence. Quand l'historique d'une question longue débordait et que
+    le « Enregistré : » se trouvait en haut de la page suivante, la réponse
+    disparaissait entièrement. Deux copies étaient dans ce cas — notées 1250 et
+    1750 millièmes par le correcteur, pour une transcription vide.
+
+    Les versions successives sont modélisées explicitement : une cellule
+    « Enregistré : » ouvre une version, une action de clôture la ferme, et on
+    retient la DERNIÈRE. L'ancienne règle du « plus long gagne » choisissait par
+    longueur brute et non par complétude.
     """
     reponses: dict[int, dict] = {}
-    entete = re.compile(r"Question (\d+)\.\s*\((\d+(?:[,.]\d+)?) pts?\)")
+    courante: int | None = None
+    x_action: float | None = None
+    x_etat: float | None = None
+
+    def cloturer(numero: int) -> None:
+        bloc = reponses[numero]
+        if bloc["encours"] is not None:
+            version = normaliser(" ".join(bloc["encours"]))
+            if version:
+                bloc["versions"].append(version)
+            bloc["encours"] = None
 
     with pdfplumber.open(chemin) as pdf:
         for page in pdf.pages:
-            texte = page.extract_text() or ""
-            marques = list(entete.finditer(texte))
+            for ligne in lignes_par_ordonnee(page):
+                texte = " ".join(m["text"] for m in ligne)
 
-            for i, m in enumerate(marques):
-                debut = m.start()
-                fin = marques[i + 1].start() if i + 1 < len(marques) else len(texte)
-                bloc = texte[debut:fin]
-
-                numero = int(m.group(1))
-                reponse = extraire_reponse(bloc) or ""
-
-                # Une question répartie sur deux pages : on garde la version la
-                # plus complète plutôt que d'écraser avec un fragment.
-                ancienne = reponses.get(numero, {}).get("reponse", "")
-                if numero in reponses and len(ancienne) >= len(reponse):
+                marque = ENTETE_QUESTION.search(texte)
+                if marque:
+                    if courante is not None:
+                        cloturer(courante)
+                    courante = int(marque.group(1))
+                    reponses.setdefault(
+                        courante,
+                        {
+                            "maxPoints": points_en_millimes(marque.group(2)),
+                            "versions": [],
+                            "encours": None,
+                            "nonRepondue": False,
+                        },
+                    )
+                    # Nouveau bloc : la géométrie du tableau précédent ne vaut plus.
+                    x_action = x_etat = None
                     continue
 
-                reponses[numero] = {
-                    "maxPoints": points_en_millimes(m.group(2)),
-                    "reponse": reponse,
-                }
+                if courante is None:
+                    continue
 
-    return reponses
+                # L'état de la barre latérale départage une vraie copie blanche
+                # d'une réponse perdue à l'extraction. C'est sur lui que porte
+                # l'assertion de fin de conversion.
+                if "Non répondue" in texte:
+                    reponses[courante]["nonRepondue"] = True
+
+                # En-tête du tableau d'historique : fixe la géométrie des colonnes.
+                # Il se répète en haut de chaque page de débordement, ce qui
+                # rétablit la géométrie sans qu'on ait à la deviner.
+                abscisses = {m["text"]: m["x0"] for m in ligne}
+                if "Action" in abscisses and "État" in abscisses and "Étape" in abscisses:
+                    x_action, x_etat = abscisses["Action"], abscisses["État"]
+                    continue
+
+                if x_action is None or x_etat is None:
+                    continue
+
+                cellule = " ".join(
+                    m["text"] for m in ligne if x_action - 2 <= m["x0"] < x_etat - 2
+                ).strip()
+                if not cellule:
+                    continue
+
+                bloc = reponses[courante]
+                if cellule.startswith("Enregistré"):
+                    cloturer(courante)
+                    _, _, contenu = cellule.partition(":")
+                    bloc["encours"] = [contenu.strip()]
+                elif cellule in ACTIONS_DE_CLOTURE:
+                    cloturer(courante)
+                elif bloc["encours"] is not None:
+                    bloc["encours"].append(cellule)
+
+    if courante is not None:
+        cloturer(courante)
+
+    return {
+        numero: {
+            "maxPoints": bloc["maxPoints"],
+            # La dernière version enregistrée est l'état final de la copie, ce
+            # que confirme l'étiquette « v1 (dernière) » du PDF.
+            "reponse": bloc["versions"][-1] if bloc["versions"] else "",
+            "versions": len(bloc["versions"]),
+            "nonRepondue": bloc["nonRepondue"],
+        }
+        for numero, bloc in reponses.items()
+    }
 
 
 # --- Assemblage ---------------------------------------------------------------
@@ -323,6 +392,7 @@ def construire(
     reponses_jeu = []
     a_noter = []
     sans_note = 0
+    incoherences: list[str] = []
 
     for fichier in fichiers:
         code = identifiant(fichier.stem)
@@ -371,6 +441,29 @@ def construire(
             if correction is None:
                 sans_note += 1
 
+            # Deux contradictions qui trahissent une perte à l'extraction.
+            #
+            # Elles ne sont pas des avertissements : elles font échouer la
+            # conversion. Les deux réponses perdues par la version précédente ont
+            # traversé tout le pipeline, ont été écrites dans le jeu, comptées
+            # dans « dont N sans réponse d'étudiant », puis publiées — sans
+            # qu'aucun signal ne soit émis. La contradiction « transcription vide
+            # + note non nulle » était détectable en une ligne dès la première
+            # exécution.
+            if not donnees["reponse"]:
+                if correction and correction["obtenu"] > 0:
+                    incoherences.append(
+                        f"{code}/q{numero} : transcription vide alors que le correcteur a "
+                        f"accordé {correction['obtenu'] / 1000:.2f} point(s). La réponse a "
+                        f"été perdue à l'extraction."
+                    )
+                elif not donnees["nonRepondue"]:
+                    incoherences.append(
+                        f"{code}/q{numero} : transcription vide sans état « Non répondue » "
+                        f"dans le PDF. Une vraie copie blanche porte cet état ; son absence "
+                        f"signale une perte."
+                    )
+
             reponses_jeu.append(
                 {
                     "id": identifiant(code, f"q{numero}"),
@@ -379,7 +472,11 @@ def construire(
                     "question": reference["enonce"],
                     "corrigé": reference["corps"][:4000],
                     "transcriptionRéférence": donnees["reponse"],
-                    # Réponses tapées : transcription parfaite par construction.
+                    # Réponses tapées par l'étudiant dans Moodle : aucune
+                    # incertitude de LECTURE. La fidélité de l'EXTRACTION, elle,
+                    # n'est pas acquise par construction — elle est garantie par
+                    # la lecture en colonnes et par les assertions de fin de
+                    # conversion, pas par la nature de la source.
                     "origineTranscription": "saisie",
                     "critères": criteres,
                     # Le correcteur a noté la question globalement, pas critère par
@@ -406,6 +503,15 @@ def construire(
                             "points_accordes": "",
                         }
                     )
+
+    if incoherences:
+        raise SystemExit(
+            "\nCONVERSION ABANDONNÉE — "
+            f"{len(incoherences)} transcription(s) vide(s) suspecte(s) :\n\n"
+            + "\n".join(f"  · {i}" for i in incoherences)
+            + "\n\nUn jeu d'évaluation corrompu produit des chiffres faux mais crédibles.\n"
+            "  Corrigez l'extraction avant de régénérer le jeu ; n'écrivez rien de partiel.\n"
+        )
 
     noté = len(reponses_jeu) - sans_note
     jeu = {

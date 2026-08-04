@@ -259,7 +259,11 @@ export type PortéeMesure = 'chaine_complete' | 'borne_haute' | 'mixte'
 
 export const PORTÉE_LABELS: Record<PortéeMesure, string> = {
   chaine_complete: 'chaîne complète (lecture manuscrite + analyse)',
-  borne_haute: 'BORNE HAUTE — analyse seule, sur transcriptions parfaites',
+  // « fidèles » et non « parfaites » : la source est saisie, donc sans
+  // incertitude de lecture, mais l'extraction reste un traitement faillible. Un
+  // audit a montré 137 transcriptions sur 208 infidèles alors que le rapport les
+  // annonçait parfaites — l'étiquette avait rendu ce défaut impensable.
+  borne_haute: 'BORNE HAUTE — analyse seule, sur transcriptions fidèles (réponses saisies)',
   mixte: 'MIXTE — le jeu mélange manuscrit et saisie, chiffres non interprétables',
 }
 

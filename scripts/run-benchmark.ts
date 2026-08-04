@@ -308,7 +308,7 @@ function afficher(rapport: RapportPipeline): void {
   if (!permetDeChoisirUnOcr(rapport)) {
     console.log('')
     if (rapport.portée === 'borne_haute') {
-      console.log('  ⚠ BORNE HAUTE — les transcriptions étaient parfaites (réponses saisies).')
+      console.log('  ⚠ BORNE HAUTE — réponses saisies, donc sans incertitude de lecture.')
       console.log('    Ces chiffres mesurent l’identification des critères, PAS la lecture')
       console.log('    manuscrite. Ils ne permettent donc pas de choisir un fournisseur d’OCR.')
       console.log('')

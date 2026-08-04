@@ -20,7 +20,12 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from 'react'
 
 import { BadgeConfiance, Points, formatPoints } from '~/components/ui'
 import type { CriterionDecision, QuestionReview } from '~/lib/repositories'
-import { relancerAnalyse, validerDécision, validerQuestion } from './actions'
+import {
+  demanderCorrigéAnnoté,
+  relancerAnalyse,
+  validerDécision,
+  validerQuestion,
+} from './actions'
 
 interface Copie {
   id: string
@@ -46,6 +51,20 @@ export function ÉcranCorrection({
 }) {
   const [index, setIndex] = useState(0)
   const [critèreSurvolé, setCritèreSurvolé] = useState<string | null>(null)
+
+  // Production du corrigé annoté. Le message porte aussi bien le refus motivé
+  // que le lien de téléchargement : c'est le même canal, parce que dans les deux
+  // cas le correcteur doit lire quelque chose.
+  const [corrigéEnCours, démarrerCorrigé] = useTransition()
+  const [messageCorrigé, setMessageCorrigé] = useState<string | null>(null)
+
+  const produireCorrigé = useCallback(() => {
+    setMessageCorrigé(null)
+    démarrerCorrigé(async () => {
+      const résultat = await demanderCorrigéAnnoté({ submissionId: copie.id })
+      setMessageCorrigé(résultat.message ?? (résultat.ok ? 'Corrigé produit.' : 'Échec.'))
+    })
+  }, [copie.id])
 
   const question = questions[index]
 
@@ -116,6 +135,20 @@ export function ÉcranCorrection({
             </p>
           </div>
           <div className="flex gap-2">
+            {/*
+              Toujours actif. Le service refuse et DIT POURQUOI si la copie n'est
+              pas entièrement validée — un bouton grisé laisserait le correcteur
+              deviner ce qui manque.
+            */}
+            <button
+              type="button"
+              onClick={produireCorrigé}
+              disabled={corrigéEnCours}
+              className="rounded-md border border-marine-100 px-3 py-1.5 text-sm hover:bg-marine-50 disabled:opacity-40"
+              title="Produire le corrigé annoté remis à l’étudiant"
+            >
+              {corrigéEnCours ? 'Production…' : 'Corrigé annoté'}
+            </button>
             <button
               type="button"
               onClick={précédente}
@@ -135,6 +168,15 @@ export function ÉcranCorrection({
           </div>
         </div>
       </div>
+
+      {messageCorrigé !== null && (
+        <p
+          role="status"
+          className="rounded-md border border-marine-100 bg-marine-50 px-3 py-2 text-sm text-anthracite-700"
+        >
+          {messageCorrigé}
+        </p>
+      )}
 
       {/* Sélecteur de questions */}
       <nav className="flex flex-wrap gap-1.5" aria-label="Questions">

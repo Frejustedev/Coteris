@@ -12,6 +12,7 @@ import { revalidatePath } from 'next/cache'
 import { headers } from 'next/headers'
 import { z } from 'zod'
 
+import { créerCorrigéAnnoté } from '~/lib/services/corrige-annote'
 import {
   appliquerDécision,
   demanderRéanalyse,
@@ -80,6 +81,39 @@ export async function relancerAnalyse(entrée: unknown): Promise<RésultatRevue>
 
   if (résultat.ok) revalidatePath('/copies')
   return résultat
+}
+
+/**
+ * Produit le corrigé annoté remis à l'étudiant.
+ *
+ * Le service refuse si la copie n'est pas entièrement validée, et dit pourquoi.
+ * Ce refus est la fonctionnalité : un corrigé partiel présenté comme définitif
+ * partirait chez l'étudiant.
+ */
+export async function demanderCorrigéAnnoté(entrée: unknown): Promise<RésultatRevue> {
+  const analyse = z.object({ submissionId: z.string().uuid() }).safeParse(entrée)
+  if (!analyse.success) return { ok: false, message: 'Requête invalide.' }
+
+  const { userId, principal } = await requireUser()
+  const requestId = (await headers()).get('x-request-id')
+
+  const résultat = await créerCorrigéAnnoté(principal, userId, {
+    submissionId: analyse.data.submissionId,
+    requestId,
+    now: new Date(),
+    auditSecret: auditSecret(),
+  })
+
+  if (!résultat.ok) return { ok: false, message: résultat.message ?? 'Production impossible.' }
+
+  revalidatePath('/copies')
+  return {
+    ok: true,
+    message:
+      `Corrigé annoté produit${
+        résultat.substitutions ? `, ${résultat.substitutions} caractère(s) substitué(s)` : ''
+      }. Téléchargement : /api/exports/${résultat.exportId ?? ''}`,
+  }
 }
 
 export async function validerQuestion(entrée: unknown): Promise<RésultatRevue> {

@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest'
 import { APIError, RateLimitError } from '@anthropic-ai/sdk'
 import type { Message } from '@anthropic-ai/sdk/resources/messages'
+import type { MessageBatch } from '@anthropic-ai/sdk/resources/messages/batches'
 
 import { createAnthropicTextAnalysisProvider, type DiagnosticAnalyse } from './index'
 import { ProviderError, type AnalysisRequest } from '../providers'
@@ -331,6 +332,111 @@ describe('createAnthropicTextAnalysisProvider', () => {
       client: clientQuiLeve(erreurDe(RateLimitError, 'rate limited', 429)) as never,
     })
     await expect(rejouable.analyze(demande())).rejects.toMatchObject({ retryable: true })
+  })
+
+  it('traite un lot, remet les résultats dans l\'ordre et applique le tarif du lot', async () => {
+    // Un lot rend ses résultats en désordre. Les recoller par position
+    // attribuerait les analyses aux mauvaises copies — une faute silencieuse et
+    // irrattrapable une fois les notes proposées.
+    const charge2 = analyseValide()
+    charge2['presentCriteria'] = [
+      { criterionId: C2, excerpts: ['la thyroïde'], matchedElementCount: 1 },
+    ]
+    charge2['missingCriteria'] = [C1]
+
+    const lot: MessageBatch = {
+      id: 'batch_test',
+      type: 'message_batch',
+      processing_status: 'ended',
+      created_at: '2026-08-04T00:00:00Z',
+      expires_at: '2026-08-05T00:00:00Z',
+      ended_at: '2026-08-04T00:10:00Z',
+      archived_at: null,
+      cancel_initiated_at: null,
+      results_url: null,
+      request_counts: { canceled: 0, errored: 0, expired: 0, processing: 0, succeeded: 2 },
+    }
+
+    const client = {
+      messages: {
+        create(): Promise<Message> {
+          throw new Error('Le chemin unitaire ne doit pas être emprunté ici.')
+        },
+        batches: {
+          create: () => Promise.resolve(lot),
+          retrieve: () => Promise.resolve(lot),
+          // Volontairement en ordre inverse.
+          results: () =>
+            Promise.resolve(
+              (async function* () {
+                yield {
+                  custom_id: 'r1',
+                  result: { type: 'succeeded' as const, message: reponse(charge2) },
+                }
+                yield {
+                  custom_id: 'r0',
+                  result: { type: 'succeeded' as const, message: reponse(analyseValide()) },
+                }
+              })(),
+            ),
+        },
+      },
+    }
+
+    const p = createAnthropicTextAnalysisProvider({ client: client as never })
+    const issues = await p.analyzeBatch([demande(), demande()])
+
+    expect(issues).toHaveLength(2)
+    expect(issues[0]?.index).toBe(0)
+    expect(issues[0]?.response?.result.presentCriteria[0]?.criterionId).toBe(C1)
+    expect(issues[1]?.response?.result.presentCriteria[0]?.criterionId).toBe(C2)
+    // Le tarif du lot est distinct : le facturer au prix unitaire annulerait
+    // dans les comptes l'économie qu'il produit.
+    expect(issues[0]?.response?.usage.provider).toBe('anthropic-batch')
+  })
+
+  it('rend une erreur en place pour une analyse ratée, sans emporter le reste du lot', async () => {
+    const lot: MessageBatch = {
+      id: 'batch_test',
+      type: 'message_batch',
+      processing_status: 'ended',
+      created_at: '2026-08-04T00:00:00Z',
+      expires_at: '2026-08-05T00:00:00Z',
+      ended_at: '2026-08-04T00:10:00Z',
+      archived_at: null,
+      cancel_initiated_at: null,
+      results_url: null,
+      request_counts: { canceled: 0, errored: 1, expired: 0, processing: 0, succeeded: 1 },
+    }
+
+    const client = {
+      messages: {
+        create(): Promise<Message> {
+          throw new Error('Le chemin unitaire ne doit pas être emprunté ici.')
+        },
+        batches: {
+          create: () => Promise.resolve(lot),
+          retrieve: () => Promise.resolve(lot),
+          results: () =>
+            Promise.resolve(
+              (async function* () {
+                yield {
+                  custom_id: 'r0',
+                  result: { type: 'succeeded' as const, message: reponse(analyseValide()) },
+                }
+                yield { custom_id: 'r1', result: { type: 'expired' as const } }
+              })(),
+            ),
+        },
+      },
+    }
+
+    const p = createAnthropicTextAnalysisProvider({ client: client as never })
+    const issues = await p.analyzeBatch([demande(), demande()])
+
+    expect(issues[0]?.response).not.toBeNull()
+    expect(issues[1]?.response).toBeNull()
+    expect(issues[1]?.error).toBeInstanceOf(ProviderError)
   })
 
   it('classe une copie vierge sans inventer de preuve', async () => {

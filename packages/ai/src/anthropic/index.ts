@@ -42,6 +42,11 @@ import type {
   MessageCreateParamsNonStreaming,
   MessageParam,
 } from '@anthropic-ai/sdk/resources/messages'
+import type {
+  BatchCreateParams,
+  MessageBatch,
+  MessageBatchIndividualResponse,
+} from '@anthropic-ai/sdk/resources/messages/batches'
 import { z } from 'zod'
 
 import {
@@ -54,9 +59,10 @@ import {
 import {
   ProviderError,
   type AnalysisRequest,
+  type BatchAnalysisOutcome,
+  type BatchTextAnalysisProvider,
   type ProviderResponse,
   type ProviderUsage,
-  type TextAnalysisProvider,
 } from '../providers'
 import { recalerExtrait, tronquer } from './normalize'
 import { composerMessage, composerReprise, INVITE_SYSTEME } from './prompt'
@@ -92,6 +98,12 @@ export interface DiagnosticAnalyse {
 export interface ClientAnalyse {
   readonly messages: {
     create(params: MessageCreateParamsNonStreaming): Promise<Message>
+    /** Absent d'un client de test qui n'éprouve que le chemin unitaire. */
+    readonly batches?: {
+      create(params: BatchCreateParams): Promise<MessageBatch>
+      retrieve(id: string): Promise<MessageBatch>
+      results(id: string): Promise<AsyncIterable<MessageBatchIndividualResponse>>
+    }
   }
 }
 
@@ -109,6 +121,14 @@ export interface AnthropicAnalysisOptions {
    */
   readonly maxRetries?: number
   readonly timeoutMs?: number
+  /**
+   * Délai au-delà duquel on cesse d'attendre un lot. Défaut : une heure.
+   *
+   * L'abandon ne l'annule pas : le lot poursuit son traitement chez le
+   * fournisseur et reste récupérable par son identifiant. On cesse d'attendre,
+   * on ne jette rien.
+   */
+  readonly batchTimeoutMs?: number
   /** Client injecté. Les tests s'en servent pour ne jamais toucher le réseau. */
   readonly client?: ClientAnalyse
   /**
@@ -471,14 +491,93 @@ function jetonsEntree(message: Message): number {
   )
 }
 
+// --- Logique partagée entre l'appel unitaire et le lot ------------------------
+
+interface Reglages {
+  readonly modele: string
+  readonly effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  readonly maxTokens: number
+}
+
+/**
+ * Paramètres d'un appel d'analyse.
+ *
+ * Une seule fonction pour les deux chemins : un lot dont les paramètres
+ * dériveraient de ceux du chemin unitaire mesurerait autre chose que lui, et la
+ * remise de 50 % ne serait plus comparable à quoi que ce soit.
+ */
+function construireParams(
+  reglages: Reglages,
+  messages: readonly MessageParam[],
+): MessageCreateParamsNonStreaming {
+  return {
+    model: reglages.modele,
+    max_tokens: reglages.maxTokens,
+    system: INVITE_SYSTEME,
+    messages: [...messages],
+    output_config: {
+      effort: reglages.effort,
+      format: { type: 'json_schema', schema: SCHEMA_ANALYSE },
+    },
+  }
+}
+
+type Interpretation =
+  | { readonly analyse: AnalysisResult; readonly problemes?: undefined }
+  | { readonly analyse?: undefined; readonly problemes: readonly string[] }
+
+/**
+ * Lit, répare et valide la sortie du modèle.
+ *
+ * Les deux chemins passent par ici, donc par les mêmes barrières. Un lot qui
+ * validerait moins sévèrement qu'un appel unitaire livrerait des analyses que le
+ * pipeline rejetterait ensuite — c'est-à-dire des zéros.
+ */
+function interpreter(
+  texte: string,
+  request: AnalysisRequest,
+  signaler: (d: DiagnosticAnalyse) => void,
+): Interpretation {
+  try {
+    const brut = schemaLache.parse(JSON.parse(texte) as unknown)
+    const repare = reparer(brut, request, signaler)
+    const strict = analysisResultSchema.parse(repare)
+    validateEvidence(strict, request.transcription)
+    validateCriteriaScope(
+      strict,
+      request.criteria.map((c) => c.id),
+    )
+    return { analyse: strict }
+  } catch (erreur) {
+    if (erreur instanceof AnalysisValidationError) return { problemes: erreur.problems }
+    if (erreur instanceof z.ZodError) {
+      return {
+        problemes: erreur.issues.map((i) => `${i.path.join('.') || 'racine'} : ${i.message}`),
+      }
+    }
+    if (erreur instanceof SyntaxError) {
+      return { problemes: ["La réponse n'est pas un JSON valide."] }
+    }
+    throw erreur
+  }
+}
+
+const attendre = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+
 // --- Fournisseur --------------------------------------------------------------
 
 export function createAnthropicTextAnalysisProvider(
   options: AnthropicAnalysisOptions = {},
-): TextAnalysisProvider {
+): BatchTextAnalysisProvider {
   const modele = options.model ?? MODELE_PAR_DEFAUT
-  const effort = options.effort ?? 'high'
-  const maxTokens = options.maxTokens ?? JETONS_SORTIE_PAR_DEFAUT
+  const reglages: Reglages = {
+    modele,
+    effort: options.effort ?? 'high',
+    maxTokens: options.maxTokens ?? JETONS_SORTIE_PAR_DEFAUT,
+  }
   const signaler = options.onDiagnostic ?? ((): void => {})
 
   const client: ClientAnalyse =
@@ -494,7 +593,6 @@ export function createAnthropicTextAnalysisProvider(
 
     async analyze(request: AnalysisRequest): Promise<ProviderResponse<AnalysisResult>> {
       const debut = Date.now()
-      const identifiants = request.criteria.map((c) => c.id)
 
       const messages: MessageParam[] = [
         { role: 'user', content: composerMessage(request) },
@@ -509,13 +607,7 @@ export function createAnthropicTextAnalysisProvider(
       for (let tentative = 0; tentative < 2; tentative++) {
         let message: Message
         try {
-          message = await client.messages.create({
-            model: modele,
-            max_tokens: maxTokens,
-            system: INVITE_SYSTEME,
-            messages,
-            output_config: { effort, format: { type: 'json_schema', schema: SCHEMA_ANALYSE } },
-          })
+          message = await client.messages.create(construireParams(reglages, messages))
         } catch (erreur) {
           throw erreurFournisseur(erreur)
         }
@@ -525,20 +617,11 @@ export function createAnthropicTextAnalysisProvider(
 
         verifierArret(message, modele)
         const texte = texteDe(message)
+        const lecture = interpreter(texte, request, signaler)
 
-        let problemes: readonly string[]
-        try {
-          const brut = schemaLache.parse(JSON.parse(texte) as unknown)
-          const repare = reparer(brut, request, signaler)
-
-          // Le fournisseur se soumet aux mêmes barrières que le pipeline. Ce qui
-          // sort d'ici les passe donc par construction.
-          const strict = analysisResultSchema.parse(repare)
-          validateEvidence(strict, request.transcription)
-          validateCriteriaScope(strict, identifiants)
-
+        if (lecture.analyse !== undefined) {
           return {
-            result: strict,
+            result: lecture.analyse,
             usage: {
               provider: 'anthropic',
               model: modele,
@@ -548,28 +631,18 @@ export function createAnthropicTextAnalysisProvider(
               durationMs: Date.now() - debut,
             } satisfies ProviderUsage,
           }
-        } catch (erreur) {
-          if (erreur instanceof AnalysisValidationError) {
-            problemes = erreur.problems
-          } else if (erreur instanceof z.ZodError) {
-            problemes = erreur.issues.map((i) => `${i.path.join('.') || 'racine'} : ${i.message}`)
-          } else if (erreur instanceof SyntaxError) {
-            problemes = ['La réponse n\'est pas un JSON valide.']
-          } else {
-            throw erreur
-          }
         }
 
-        derniersProblemes = problemes
+        derniersProblemes = lecture.problemes
 
         if (tentative === 0) {
           signaler({
             type: 'reprise',
-            detail: `Analyse non conforme, reprise demandée : ${problemes.join(' ; ')}`,
+            detail: `Analyse non conforme, reprise demandée : ${lecture.problemes.join(' ; ')}`,
           })
           messages.push(
             { role: 'assistant', content: texte },
-            { role: 'user', content: composerReprise(problemes) },
+            { role: 'user', content: composerReprise(lecture.problemes) },
           )
         }
       }
@@ -581,6 +654,182 @@ export function createAnthropicTextAnalysisProvider(
         `Le modèle n'a pas produit d'analyse conforme en deux tentatives :\n` +
           derniersProblemes.map((p) => `  · ${p}`).join('\n'),
         false,
+      )
+    },
+
+    /**
+     * Analyse un lot entier, à moitié prix.
+     *
+     * Corriger une épreuve n'est pas sensible à la latence : personne n'attend la
+     * copie 137 pour relire la première. La remise de 50 % du traitement par lot
+     * est donc acquise sans contrepartie — et c'est le seul levier de coût
+     * sérieux, l'effort n'en économisant que cinq pour cent.
+     *
+     * Une analyse non conforme n'est pas reprise DANS le lot : elle repasse par
+     * le chemin unitaire, qui sait dialoguer avec le modèle pour lui faire
+     * corriger ses défauts. C'est plus cher, mais cela ne concerne qu'une
+     * poignée de cas, et fabriquer un second lot pour eux ferait attendre tout
+     * le monde une seconde fois.
+     */
+    async analyzeBatch(
+      requests: readonly AnalysisRequest[],
+      onProgress?: (message: string) => void,
+    ): Promise<readonly BatchAnalysisOutcome[]> {
+      const dire = onProgress ?? ((): void => {})
+      const lots = client.messages.batches
+      if (lots === undefined) {
+        throw new ProviderError(
+          'anthropic',
+          "Ce client ne propose pas l'API de traitement par lot.",
+          false,
+        )
+      }
+      if (requests.length === 0) return []
+
+      const debut = Date.now()
+
+      let lot: MessageBatch
+      try {
+        lot = await lots.create({
+          requests: requests.map((request, index) => ({
+            custom_id: `r${index}`,
+            params: construireParams(reglages, [
+              { role: 'user', content: composerMessage(request) },
+            ]),
+          })),
+        })
+      } catch (erreur) {
+        throw erreurFournisseur(erreur)
+      }
+
+      dire(`Lot ${lot.id} déposé : ${requests.length} analyses.`)
+
+      // Attente. L'intervalle croît pour ne pas marteler l'API sur les lots
+      // longs, sans dépasser la minute — au-delà, la fin du lot passerait
+      // inaperçue trop longtemps.
+      let intervalle = 5_000
+      const limite = Date.now() + (options.batchTimeoutMs ?? 3_600_000)
+      while (lot.processing_status !== 'ended') {
+        if (Date.now() > limite) {
+          throw new ProviderError(
+            'anthropic',
+            `Le lot ${lot.id} n'a pas abouti dans le délai imparti. Il continue côté ` +
+              `fournisseur : ses résultats restent récupérables par son identifiant.`,
+            true,
+          )
+        }
+        await attendre(intervalle)
+        intervalle = Math.min(intervalle * 1.5, 60_000)
+        try {
+          lot = await lots.retrieve(lot.id)
+        } catch (erreur) {
+          throw erreurFournisseur(erreur)
+        }
+        const c = lot.request_counts
+        dire(
+          `Lot ${lot.id} : ${c.succeeded} abouties, ${c.processing} en cours, ` +
+            `${c.errored} en erreur.`,
+        )
+      }
+
+      const issues = new Map<number, BatchAnalysisOutcome>()
+      const àReprendre: number[] = []
+
+      for await (const réponse of await lots.results(lot.id)) {
+        const index = Number(réponse.custom_id.slice(1))
+        const request = requests[index]
+        if (request === undefined) continue
+
+        if (réponse.result.type !== 'succeeded') {
+          issues.set(index, {
+            index,
+            response: null,
+            error: new ProviderError(
+              'anthropic',
+              `Analyse « ${réponse.result.type} » dans le lot ${lot.id}.`,
+              réponse.result.type === 'errored',
+            ),
+          })
+          continue
+        }
+
+        const message = réponse.result.message
+        try {
+          verifierArret(message, modele)
+        } catch (erreur) {
+          issues.set(index, {
+            index,
+            response: null,
+            error:
+              erreur instanceof ProviderError
+                ? erreur
+                : new ProviderError('anthropic', String(erreur), false),
+          })
+          continue
+        }
+
+        const lecture = interpreter(texteDe(message), request, signaler)
+        if (lecture.analyse === undefined) {
+          // Non conforme : le chemin unitaire saura lui faire corriger ses
+          // défauts, ce qu'un lot ne permet pas.
+          àReprendre.push(index)
+          continue
+        }
+
+        issues.set(index, {
+          index,
+          response: {
+            result: lecture.analyse,
+            usage: {
+              provider: 'anthropic-batch',
+              model: modele,
+              inputTokens: jetonsEntree(message),
+              outputTokens: message.usage.output_tokens,
+              pageCount: null,
+              // Durée du lot entier rapportée à une analyse : une durée par lot
+              // n'aurait pas de sens dans une moyenne par réponse.
+              durationMs: Math.round((Date.now() - debut) / requests.length),
+            } satisfies ProviderUsage,
+          },
+          error: null,
+        })
+      }
+
+      if (àReprendre.length > 0) {
+        dire(`${àReprendre.length} analyse(s) non conforme(s) : reprise au tarif unitaire.`)
+      }
+
+      for (const index of àReprendre) {
+        const request = requests[index]
+        if (request === undefined) continue
+        try {
+          issues.set(index, { index, response: await this.analyze(request), error: null })
+        } catch (erreur) {
+          issues.set(index, {
+            index,
+            response: null,
+            error:
+              erreur instanceof ProviderError
+                ? erreur
+                : new ProviderError('anthropic', String(erreur), false),
+          })
+        }
+      }
+
+      // Toute demande reçoit une issue, y compris celles que le lot n'a pas
+      // rendues : un tableau plus court que celui des demandes ferait glisser
+      // les indices chez l'appelant, donc attribuer des notes aux mauvaises copies.
+      return requests.map(
+        (_, index) =>
+          issues.get(index) ?? {
+            index,
+            response: null,
+            error: new ProviderError(
+              'anthropic',
+              `Le lot ${lot.id} n'a rendu aucun résultat pour cette analyse.`,
+              true,
+            ),
+          },
       )
     },
   }

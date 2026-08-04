@@ -34,10 +34,12 @@ import {
   createMockTextAnalysisProvider,
   microEur,
   MODELE_PAR_DEFAUT,
+  supportsBatch,
+  type BatchAnalysisOutcome,
   type DiagnosticAnalyse,
   type TextAnalysisProvider,
 } from '@coteris/ai'
-import { gradeAnswer } from '@coteris/pipeline'
+import { analysisRequestFor, gradeAnswer, type GradeAnswerInput } from '@coteris/pipeline'
 import type { Millipoints } from '@coteris/shared'
 import type { QuestionGradingRules, RubricCriterion } from '@coteris/grading'
 
@@ -138,10 +140,14 @@ function versUuid(identifiant: string): string {
   )
 }
 
-async function évaluerRéponse(
-  réponse: RéponseÉvaluation,
-  analyzer: TextAnalysisProvider,
-): Promise<ObservationRéponse> {
+/**
+ * Construit l'entrée de correction d'une réponse du jeu.
+ *
+ * Séparée de l'évaluation parce que la pré-passe par lot en a besoin : elle doit
+ * préparer exactement les mêmes demandes que celles qui seront jouées ensuite,
+ * sans quoi le lot mesurerait autre chose que le chemin unitaire.
+ */
+function entréePour(réponse: RéponseÉvaluation): GradeAnswerInput {
   const critères: RubricCriterion[] = réponse.critères.map((c, index) => ({
     id: versUuid(c.id) as RubricCriterion['id'],
     questionId: réponse.questionId as RubricCriterion['questionId'],
@@ -171,36 +177,78 @@ async function évaluerRéponse(
   const formulations: Record<string, readonly string[]> = {}
   for (const c of réponse.critères) formulations[versUuid(c.id)] = c.acceptableAnswers
 
-  const début = Date.now()
-  const résultat = await gradeAnswer(
-    {
-      questionPrompt: réponse.question,
-      answerKeyText: réponse.corrigé,
-      language: 'fr',
-      rubricLocked: true,
-      criteria: critères,
-      acceptableAnswersByCriterion: formulations,
-      questionRules: règles,
-      // La transcription de référence est utilisée telle quelle : ce banc d'essai
-      // mesure l'identification des critères, pas la qualité de l'OCR. Les deux
-      // se mesurent séparément, faute de quoi on ne saurait pas laquelle des deux
-      // étapes échoue.
-      ocr: {
-        fullText: réponse.transcriptionRéférence,
-        words: [],
-        // La transcription de référence n'a pas été LUE : elle est saisie. Il n'y
-        // a donc aucune incertitude de lecture. Toute valeur inférieure à 1
-        // serait un plafond fantôme : dans le calcul de confiance, l'OCR est un
-        // plafond MULTIPLICATIF, et un 0,95 arbitraire écrêterait la confiance de
-        // tous les pipelines de la même façon — donc fausserait la comparaison
-        // entre eux, qui est l'unique objet de ce banc d'essai.
-        confidence: 1,
-        engineVersion: 'reference',
-      },
+  return {
+    questionPrompt: réponse.question,
+    answerKeyText: réponse.corrigé,
+    language: 'fr',
+    rubricLocked: true,
+    criteria: critères,
+    acceptableAnswersByCriterion: formulations,
+    questionRules: règles,
+    // La transcription de référence est utilisée telle quelle : ce banc d'essai
+    // mesure l'identification des critères, pas la qualité de l'OCR. Les deux
+    // se mesurent séparément, faute de quoi on ne saurait pas laquelle des deux
+    // étapes échoue.
+    ocr: {
+      fullText: réponse.transcriptionRéférence,
+      words: [],
+      // La transcription de référence n'a pas été LUE : elle est saisie. Il n'y
+      // a donc aucune incertitude de lecture. Toute valeur inférieure à 1
+      // serait un plafond fantôme : dans le calcul de confiance, l'OCR est un
+      // plafond MULTIPLICATIF, et un 0,95 arbitraire écrêterait la confiance de
+      // tous les pipelines de la même façon — donc fausserait la comparaison
+      // entre eux, qui est l'unique objet de ce banc d'essai.
+      confidence: 1,
+      engineVersion: 'reference',
     },
-    analyzer,
-  )
-  const duréeMs = Date.now() - début
+  }
+}
+
+/**
+ * Fournisseur qui restitue des analyses déjà obtenues par lot.
+ *
+ * Le pipeline reste identique : il appelle `analyze()` sans savoir que la
+ * réponse était déjà là. Mesurer le lot autrement — en court-circuitant le
+ * pipeline — reviendrait à mesurer un autre produit que celui qu'on livre.
+ *
+ * L'indexation se fait sur la demande sérialisée, jamais sur un compteur
+ * d'appels : le pipeline n'appelle pas le modèle pour une copie blanche, et un
+ * compteur se décalerait dès la première, attribuant ensuite chaque analyse à la
+ * mauvaise copie.
+ */
+function fournisseurPréCalculé(
+  nom: string,
+  issues: ReadonlyMap<string, BatchAnalysisOutcome>,
+): TextAnalysisProvider {
+  return {
+    name: nom,
+    analyze(request) {
+      const issue = issues.get(JSON.stringify(request))
+      if (issue === undefined) {
+        return Promise.reject(
+          new Error("Cette demande n'a pas été soumise au lot : incohérence du harnais."),
+        )
+      }
+      if (issue.response === null) {
+        return Promise.reject(issue.error ?? new Error('Analyse absente du lot.'))
+      }
+      return Promise.resolve(issue.response)
+    },
+  }
+}
+
+async function évaluerRéponse(
+  réponse: RéponseÉvaluation,
+  analyzer: TextAnalysisProvider,
+): Promise<ObservationRéponse> {
+  const début = Date.now()
+  const résultat = await gradeAnswer(entréePour(réponse), analyzer)
+
+  // La durée rapportée par le fournisseur prime sur le temps mesuré ici. En mode
+  // lot, l'analyse a été obtenue avant cette boucle : le chronomètre local ne
+  // mesurerait que la restitution d'un résultat déjà en mémoire, et le rapport
+  // annoncerait quelques millisecondes pour un travail de plusieurs minutes.
+  const duréeMs = résultat.usage?.durationMs ?? Date.now() - début
 
   const observations = construireObservations(réponse, résultat)
 
@@ -408,12 +456,35 @@ fausserait la décision la plus importante du projet, celle du fournisseur.
       )
     }
 
+    // Pré-passe par lot quand le fournisseur la propose : même travail, moitié
+    // prix. On n'y soumet que les réponses non vides — le pipeline n'appelle pas
+    // le modèle pour une copie blanche, et payer pour une analyse qui ne sera
+    // jamais demandée serait une dépense pure.
+    let effectif: TextAnalysisProvider = analyzer
+    if (supportsBatch(analyzer) && argument('lot') !== 'non') {
+      const àAnalyser = àTraiter.filter((r) => r.transcriptionRéférence.trim().length > 0)
+      console.log(
+        `\nSoumission par lot : ${àAnalyser.length} analyses ` +
+          `(${àTraiter.length - àAnalyser.length} copie(s) blanche(s) écartée(s)).`,
+      )
+      const demandes = àAnalyser.map((r) => analysisRequestFor(entréePour(r)))
+      const issues = await analyzer.analyzeBatch(demandes, (m) => {
+        console.log(`  ${m}`)
+      })
+      const parDemande = new Map<string, BatchAnalysisOutcome>()
+      demandes.forEach((demande, i) => {
+        const issue = issues[i]
+        if (issue !== undefined) parDemande.set(JSON.stringify(demande), issue)
+      })
+      effectif = fournisseurPréCalculé(analyzer.name, parDemande)
+    }
+
     const observations: ObservationRéponse[] = []
     const échecs: { réponse: string; raison: string }[] = []
 
     for (const réponse of àTraiter) {
       try {
-        observations.push(await évaluerRéponse(réponse, analyzer))
+        observations.push(await évaluerRéponse(réponse, effectif))
       } catch (error) {
         // Un fournisseur réel échoue : refus du modèle, sortie non conforme
         // après reprise, coupure réseau. Sans ce filet, une seule réponse en

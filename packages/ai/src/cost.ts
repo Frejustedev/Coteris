@@ -116,6 +116,18 @@ export const PRICING: readonly ModelPricing[] = [
     perPage: null,
     effectiveFrom: '2026-08-01',
   },
+  {
+    // Traitement par lot : moitié prix. Le fournisseur porte un nom distinct
+    // parce que le TARIF est distinct, et que la table est indexée par le couple
+    // (fournisseur, modèle). Facturer un lot au tarif unitaire annulerait dans
+    // les comptes l'économie qu'il produit réellement.
+    provider: 'anthropic-batch',
+    model: 'claude-opus-5',
+    inputPerMillionTokens: usdParMillion(2.5),
+    outputPerMillionTokens: usdParMillion(12.5),
+    perPage: null,
+    effectiveFrom: '2026-08-01',
+  },
 ]
 
 export function findPricing(provider: string, model: string): ModelPricing | undefined {

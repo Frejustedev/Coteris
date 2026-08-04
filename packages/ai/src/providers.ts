@@ -78,6 +78,39 @@ export interface TextAnalysisProvider {
   analyze(request: AnalysisRequest): Promise<ProviderResponse<AnalysisResult>>
 }
 
+/** Issue d'une analyse au sein d'un lot. Exactement l'un des deux champs est renseigné. */
+export interface BatchAnalysisOutcome {
+  /** Position dans le tableau de demandes : un lot rend ses résultats en désordre. */
+  readonly index: number
+  readonly response: ProviderResponse<AnalysisResult> | null
+  readonly error: ProviderError | null
+}
+
+/**
+ * Analyse par lot, pour les charges qui ne sont pas sensibles à la latence.
+ *
+ * Corriger une épreuve est exactement cela : personne n'attend la copie 137 pour
+ * commencer à relire la première. Les fournisseurs qui facturent ce mode moins
+ * cher — souvent moitié prix — rendent la correction deux fois plus abordable
+ * sans rien changer à sa qualité.
+ *
+ * Les erreurs sont rendues DANS le tableau plutôt que levées : dans un lot de
+ * deux cents, une seule analyse en échec ne doit pas emporter les cent
+ * quatre-vingt-dix-neuf autres, déjà payées.
+ */
+export interface BatchTextAnalysisProvider extends TextAnalysisProvider {
+  analyzeBatch(
+    requests: readonly AnalysisRequest[],
+    onProgress?: (message: string) => void,
+  ): Promise<readonly BatchAnalysisOutcome[]>
+}
+
+export function supportsBatch(
+  provider: TextAnalysisProvider,
+): provider is BatchTextAnalysisProvider {
+  return typeof (provider as Partial<BatchTextAnalysisProvider>).analyzeBatch === 'function'
+}
+
 /** Analyse multimodale, directement sur l'image de la zone — pipeline B. */
 export interface VisionAnalysisProvider {
   readonly name: string

@@ -7,6 +7,7 @@
  */
 
 export {
+  analysisRequestFor,
   gradeAnswer,
   RubricNotLockedError,
   type GradeAnswerInput,

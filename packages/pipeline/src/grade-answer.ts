@@ -110,6 +110,34 @@ export class RubricNotLockedError extends Error {
 const DEFAULT_MIN_OCR_CONFIDENCE = 0.4
 
 /**
+ * Construit la demande d'analyse à partir d'une entrée de correction.
+ *
+ * Exportée, et unique. Le banc d'essai doit pouvoir préparer les mêmes demandes
+ * pour les soumettre en lot ; si chacun construisait les siennes, la mesure
+ * porterait sur des demandes différentes de celles de la production, et l'écart
+ * ne se verrait nulle part.
+ *
+ * `description` reste nulle : le modèle reçoit l'intitulé du critère et les
+ * formulations acceptables, jamais les points qu'il vaut. Lui donner le barème
+ * l'inciterait à raisonner en note plutôt qu'en constat.
+ */
+export function analysisRequestFor(input: GradeAnswerInput): AnalysisRequest {
+  return {
+    questionPrompt: input.questionPrompt,
+    answerKeyText: input.answerKeyText,
+    language: input.language,
+    transcription: input.ocr.fullText,
+    criteria: input.criteria.map((c) => ({
+      id: c.id as string,
+      label: c.label,
+      description: null,
+      acceptableAnswers: input.acceptableAnswersByCriterion[c.id as string] ?? [],
+      expectedElementCount: c.expectedElementCount,
+    })),
+  }
+}
+
+/**
  * Corrige une réponse et produit une proposition justifiée.
  *
  * @param analyzer Fournisseur d'analyse. En test et par défaut, le simulateur.
@@ -171,19 +199,7 @@ export async function gradeAnswer(
   })
 
   // --- Étape 3 : analyse structurée -----------------------------------------
-  const request: AnalysisRequest = {
-    questionPrompt: input.questionPrompt,
-    answerKeyText: input.answerKeyText,
-    language: input.language,
-    transcription: input.ocr.fullText,
-    criteria: input.criteria.map((c) => ({
-      id: c.id as string,
-      label: c.label,
-      description: null,
-      acceptableAnswers: input.acceptableAnswersByCriterion[c.id as string] ?? [],
-      expectedElementCount: c.expectedElementCount,
-    })),
-  }
+  const request = analysisRequestFor(input)
 
   const { result: brut, usage } = await analyzer.analyze(request)
 

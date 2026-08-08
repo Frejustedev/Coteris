@@ -107,6 +107,15 @@ export const validationStatusEnum = pgEnum('validation_status', [
   'rejected',
 ])
 
+/**
+ * Qui a écrit un critère de barème.
+ *
+ * Distinct de `validation_status`, qui dit si un enseignant l'a tranché. Un
+ * critère peut être proposé par un modèle ET accepté sans retouche : les deux
+ * informations sont nécessaires, et l'une ne se déduit pas de l'autre.
+ */
+export const criterionOriginEnum = pgEnum('criterion_origin', ['human', 'ai_suggested'])
+
 export const aiTaskTypeEnum = pgEnum('ai_task_type', [
   'subject_extraction',
   'answer_key_structuring',

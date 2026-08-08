@@ -74,6 +74,8 @@ export const AUDIT_ACTIONS = {
   ANSWER_KEY_CREATE: 'answer_key.create',
   ANSWER_KEY_VALIDATE: 'answer_key.validate',
   RUBRIC_CREATE: 'rubric.create',
+  /** Un modèle a proposé un découpage de barème. Aucun critère ne corrige encore. */
+  RUBRIC_SUGGEST: 'rubric.suggest',
   RUBRIC_VALIDATE: 'rubric.validate',
   RUBRIC_LOCK: 'rubric.lock',
   SUBMISSION_IMPORT: 'submission.import',
@@ -122,6 +124,7 @@ export const LIBELLÉS_ACTIONS: Record<AuditAction, string> = {
   'answer_key.create': 'Création du corrigé',
   'answer_key.validate': 'Validation du corrigé',
   'rubric.create': 'Création du barème',
+  'rubric.suggest': 'Proposition de barème par le modèle',
   'rubric.validate': 'Validation du barème',
   'rubric.lock': 'Verrouillage du barème',
   'submission.import': 'Import d’une copie',

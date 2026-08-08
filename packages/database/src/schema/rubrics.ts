@@ -29,6 +29,7 @@ import { assessments, questions } from './assessments'
 import { users, organizations } from './auth'
 import {
   attributionTypeEnum,
+  criterionOriginEnum,
   millipointsColumn,
   primaryId,
   softDelete,
@@ -222,12 +223,38 @@ export const rubricCriteria = pgTable(
     validationStatus: validationStatusEnum('validation_status').notNull().default('draft'),
     validatedBy: uuid('validated_by').references(() => users.id, { onDelete: 'set null' }),
     validatedAt: timestamp('validated_at', { withTimezone: true }),
+    /**
+     * Qui a écrit ce critère.
+     *
+     * Un critère proposé par un modèle et accepté tel quel par l'enseignant est
+     * indiscernable d'un critère qu'il aurait rédigé lui-même : même intitulé,
+     * même statut « accepted », même auteur de validation. Or la différence
+     * compte devant un jury, et elle compte pour mesurer si l'aide à la
+     * structuration sert vraiment — le taux d'acceptation ne se calcule pas sans
+     * cette colonne.
+     */
+    origin: criterionOriginEnum('origin').notNull().default('human'),
+    /** Appel de modèle ayant produit la proposition, s'il y en a eu un. */
+    suggestedByAiRunId: uuid('suggested_by_ai_run_id'),
     ...timestamps,
     ...softDelete,
   },
   (table) => [
     index('rubric_criteria_version_idx').on(table.rubricVersionId, table.questionId),
     index('rubric_criteria_org_idx').on(table.organizationId),
+    // Index partiel des critères en attente d'arbitrage. L'écran de préparation
+    // les cherche à chaque affichage ; ils sont rares et transitoires, donc un
+    // index complet coûterait plus qu'il ne rapporte.
+    index('rubric_criteria_brouillons_idx')
+      .on(table.rubricVersionId)
+      .where(sql`${table.validationStatus} = 'draft' AND ${table.deletedAt} IS NULL`),
+    // Un critère issu d'un modèle porte forcément la trace de l'appel qui l'a
+    // produit. Sans cette contrainte, l'origine devient déclarative et ne prouve
+    // plus rien.
+    check(
+      'rubric_criteria_origine_tracee',
+      sql`${table.origin} <> 'ai_suggested' OR ${table.suggestedByAiRunId} IS NOT NULL`,
+    ),
     // Les points sont en millièmes et ne peuvent pas être négatifs : une pénalité
     // se déclare avec l'attribution `penalty`, pas avec un nombre négatif.
     check('rubric_criteria_max_points_positive', sql`${table.maxPoints} >= 0`),

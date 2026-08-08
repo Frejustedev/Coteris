@@ -33,8 +33,9 @@ import {
 import type { Millipoints } from '@coteris/shared'
 import type { QuestionGradingRules, RubricCriterion } from '@coteris/grading'
 
+import { comptabiliserAppel, lireQuota } from '@coteris/quota'
+
 import type { WorkerContext } from '../context'
-import { comptabiliserAppel, lireQuota } from '../quota'
 
 export async function analyserReponse(brut: unknown, ctx: WorkerContext): Promise<void> {
   const payload = parsePayload(TASKS.ANALYZE_REGION, brut) as AnalyzeRegionPayload
@@ -91,7 +92,7 @@ export async function analyserReponse(brut: unknown, ctx: WorkerContext): Promis
     forceSecondPass: payload.forceSecondPass,
   }
 
-  const quota = await lireQuota(ctx, payload.organizationId, contexte.assessmentId, maintenant)
+  const quota = await lireQuota(ctx.db, payload.organizationId, contexte.assessmentId, maintenant)
   if (quota === null) {
     // Une organisation sans quota configuré n'est pas bloquée : ajouter ce
     // garde-fou ne doit pas se traduire par une panne générale. Mais l'absence
@@ -112,7 +113,7 @@ export async function analyserReponse(brut: unknown, ctx: WorkerContext): Promis
       // bloque tout n'aurait dans ses journaux que des tâches en échec, sans
       // jamais la raison.
       await comptabiliserAppel(
-        ctx,
+        ctx.db,
         {
           organizationId: payload.organizationId,
           assessmentId: contexte.assessmentId,
@@ -124,6 +125,7 @@ export async function analyserReponse(brut: unknown, ctx: WorkerContext): Promis
             pageCount: null,
             durationMs: null,
           },
+          taskType: 'analysis',
           promptVersion: ctx.promptVersion,
           status: 'skipped_quota',
           error: décision.reason,
@@ -152,7 +154,7 @@ export async function analyserReponse(brut: unknown, ctx: WorkerContext): Promis
     // la facture — et c'est justement sur les échecs répétés que la dépense
     // s'emballe, puisque la tâche est rejouée.
     await comptabiliserAppel(
-      ctx,
+      ctx.db,
       {
         organizationId: payload.organizationId,
         assessmentId: contexte.assessmentId,
@@ -164,6 +166,7 @@ export async function analyserReponse(brut: unknown, ctx: WorkerContext): Promis
           pageCount: null,
           durationMs: Date.now() - debut,
         },
+        taskType: 'analysis',
         promptVersion: ctx.promptVersion,
         status: 'failed',
         error: erreur instanceof Error ? erreur.message.slice(0, 2000) : String(erreur),
@@ -175,11 +178,12 @@ export async function analyserReponse(brut: unknown, ctx: WorkerContext): Promis
 
   if (resultat.usage !== null) {
     await comptabiliserAppel(
-      ctx,
+      ctx.db,
       {
         organizationId: payload.organizationId,
         assessmentId: contexte.assessmentId,
         usage: resultat.usage,
+        taskType: 'analysis',
         promptVersion: ctx.promptVersion,
         status: 'success',
         error: null,

@@ -19,6 +19,7 @@
     "@coteris/grading": "workspace:*",
     "@coteris/jobs": "workspace:*",
     "@coteris/pipeline": "workspace:*",
+    "@coteris/quota": "workspace:*",
     "@coteris/shared": "workspace:*",
     "@coteris/storage": "workspace:*",
     "drizzle-orm": "^0.38.3",

@@ -186,6 +186,10 @@ async function main() {
     !copie.corps.includes('Non encore implémenté'),
     'aucune action n’est présentée comme non implémentée',
   )
+  vérifier(
+    copie.corps.includes('Corrigé annoté'),
+    'le corrigé annoté peut être demandé depuis l’écran de correction',
+  )
 
   // --- Éditeur de zones ----------------------------------------------------------
   console.log('\nDécoupage des zones')

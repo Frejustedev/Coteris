@@ -30,23 +30,9 @@
  * construction : celui-ci ne peut plus produire de zéro à cause de nous.
  */
 
-import {
-  Anthropic,
-  APIConnectionError,
-  APIError,
-  InternalServerError,
-  RateLimitError,
-} from '@anthropic-ai/sdk'
-import type {
-  Message,
-  MessageCreateParamsNonStreaming,
-  MessageParam,
-} from '@anthropic-ai/sdk/resources/messages'
-import type {
-  BatchCreateParams,
-  MessageBatch,
-  MessageBatchIndividualResponse,
-} from '@anthropic-ai/sdk/resources/messages/batches'
+import { Anthropic } from '@anthropic-ai/sdk'
+import type { Message, MessageParam } from '@anthropic-ai/sdk/resources/messages'
+import type { MessageBatch } from '@anthropic-ai/sdk/resources/messages/batches'
 import { z } from 'zod'
 
 import {
@@ -64,9 +50,22 @@ import {
   type ProviderResponse,
   type ProviderUsage,
 } from '../providers'
+import {
+  attendre,
+  construireParams,
+  erreurFournisseur,
+  jetonsEntree,
+  texteDe,
+  verifierArret,
+  type ClientAnalyse,
+  type NiveauEffort,
+  type Reglages,
+} from './appel'
 import { recalerExtrait, tronquer } from './normalize'
 import { composerMessage, composerReprise, INVITE_SYSTEME } from './prompt'
 import { SCHEMA_ANALYSE } from './schema'
+
+export type { ClientAnalyse } from './appel'
 
 /** Modèle par défaut. Sert aussi de clé de tarification dans `PRICING`. */
 export const MODELE_PAR_DEFAUT = 'claude-opus-5'
@@ -94,24 +93,11 @@ export interface DiagnosticAnalyse {
   readonly detail: string
 }
 
-/** Sous-ensemble du client SDK réellement utilisé, pour pouvoir l'injecter en test. */
-export interface ClientAnalyse {
-  readonly messages: {
-    create(params: MessageCreateParamsNonStreaming): Promise<Message>
-    /** Absent d'un client de test qui n'éprouve que le chemin unitaire. */
-    readonly batches?: {
-      create(params: BatchCreateParams): Promise<MessageBatch>
-      retrieve(id: string): Promise<MessageBatch>
-      results(id: string): Promise<AsyncIterable<MessageBatchIndividualResponse>>
-    }
-  }
-}
-
 export interface AnthropicAnalysisOptions {
   /** Clé d'API. À défaut, le SDK lit `ANTHROPIC_API_KEY`. */
   readonly apiKey?: string
   readonly model?: string
-  readonly effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  readonly effort?: NiveauEffort
   readonly maxTokens?: number
   /**
    * Reprises internes du SDK sur erreur réseau ou 429/5xx.
@@ -390,138 +376,6 @@ function reparer(
   }
 }
 
-// --- Lecture de la réponse ----------------------------------------------------
-
-/** Concatène les blocs de texte de la réponse. */
-function texteDe(message: Message): string {
-  return message.content
-    .filter((bloc): bloc is Extract<typeof bloc, { type: 'text' }> => bloc.type === 'text')
-    .map((bloc) => bloc.text)
-    .join('')
-}
-
-/**
- * Vérifie `stop_reason` **avant** toute lecture du contenu.
- *
- * Un refus des classificateurs de sûreté revient en HTTP 200 avec un contenu
- * vide ; une troncature revient avec un JSON coupé au milieu. Dans les deux cas,
- * lire `content` sans vérifier produit une analyse fantôme — donc un zéro.
- */
-function verifierArret(message: Message, modele: string): void {
-  const raison = message.stop_reason
-
-  if (raison === 'refusal') {
-    const details = message.stop_details
-    const categorie =
-      details !== null && details !== undefined && 'category' in details
-        ? (details.category ?? 'non précisée')
-        : 'non précisée'
-    throw new ProviderError(
-      'anthropic',
-      `Le modèle ${modele} a refusé d'analyser cette réponse (catégorie : ${categorie}). ` +
-        `La copie doit être corrigée à la main ; elle ne doit pas être notée zéro.`,
-      false,
-    )
-  }
-
-  if (raison === 'max_tokens') {
-    throw new ProviderError(
-      'anthropic',
-      `Réponse tronquée : le plafond de jetons de sortie a été atteint. Sur ce modèle le ` +
-        `raisonnement partage ce plafond avec la réponse — augmentez maxTokens.`,
-      true,
-    )
-  }
-
-  if (raison === 'model_context_window_exceeded') {
-    throw new ProviderError(
-      'anthropic',
-      "La fenêtre de contexte est dépassée : la question, le corrigé ou la copie sont trop longs.",
-      false,
-    )
-  }
-
-  if (raison !== 'end_turn' && raison !== 'stop_sequence') {
-    throw new ProviderError(
-      'anthropic',
-      `Arrêt inattendu du modèle (« ${raison ?? 'null'} »).`,
-      false,
-    )
-  }
-}
-
-/**
- * Traduit une erreur du SDK, en distinguant ce qui mérite une nouvelle tentative
- * de ce qui n'en mérite aucune.
- *
- * La distinction n'est pas cosmétique. Un solde de crédit épuisé, une clé
- * révoquée, un modèle inconnu : trois erreurs qu'aucune reprise ne corrige. Sans
- * ce tri, la file de travaux rejoue la tâche trois fois, et le SDK ajoute ses
- * propres reprises — jusqu'à neuf appels pour un échec certain.
- *
- * Le tri se fait sur les classes typées du SDK, jamais sur le texte du message :
- * un message d'erreur change sans préavis, une classe non.
- */
-function erreurFournisseur(erreur: unknown): ProviderError {
-  if (erreur instanceof RateLimitError) {
-    return new ProviderError('anthropic', `Débit dépassé : ${erreur.message}`, true)
-  }
-  if (erreur instanceof InternalServerError) {
-    return new ProviderError('anthropic', `Service indisponible : ${erreur.message}`, true)
-  }
-  if (erreur instanceof APIConnectionError) {
-    return new ProviderError('anthropic', `Connexion en échec : ${erreur.message}`, true)
-  }
-  if (erreur instanceof APIError) {
-    return new ProviderError(
-      'anthropic',
-      `Requête refusée (${erreur.status ?? '?'}) : ${erreur.message}`,
-      false,
-    )
-  }
-  const details = erreur instanceof Error ? erreur.message : String(erreur)
-  return new ProviderError('anthropic', `Appel au modèle en échec : ${details}`, true)
-}
-
-/** Total des jetons d'entrée facturés, écriture et lecture de cache comprises. */
-function jetonsEntree(message: Message): number {
-  const u = message.usage
-  return (
-    u.input_tokens + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0)
-  )
-}
-
-// --- Logique partagée entre l'appel unitaire et le lot ------------------------
-
-interface Reglages {
-  readonly modele: string
-  readonly effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
-  readonly maxTokens: number
-}
-
-/**
- * Paramètres d'un appel d'analyse.
- *
- * Une seule fonction pour les deux chemins : un lot dont les paramètres
- * dériveraient de ceux du chemin unitaire mesurerait autre chose que lui, et la
- * remise de 50 % ne serait plus comparable à quoi que ce soit.
- */
-function construireParams(
-  reglages: Reglages,
-  messages: readonly MessageParam[],
-): MessageCreateParamsNonStreaming {
-  return {
-    model: reglages.modele,
-    max_tokens: reglages.maxTokens,
-    system: INVITE_SYSTEME,
-    messages: [...messages],
-    output_config: {
-      effort: reglages.effort,
-      format: { type: 'json_schema', schema: SCHEMA_ANALYSE },
-    },
-  }
-}
-
 type Interpretation =
   | { readonly analyse: AnalysisResult; readonly problemes?: undefined }
   | { readonly analyse?: undefined; readonly problemes: readonly string[] }
@@ -561,11 +415,6 @@ function interpreter(
     throw erreur
   }
 }
-
-const attendre = (ms: number): Promise<void> =>
-  new Promise((resolve) => {
-    setTimeout(resolve, ms)
-  })
 
 // --- Fournisseur --------------------------------------------------------------
 
@@ -607,7 +456,9 @@ export function createAnthropicTextAnalysisProvider(
       for (let tentative = 0; tentative < 2; tentative++) {
         let message: Message
         try {
-          message = await client.messages.create(construireParams(reglages, messages))
+          message = await client.messages.create(
+            construireParams(reglages, messages, INVITE_SYSTEME, SCHEMA_ANALYSE),
+          )
         } catch (erreur) {
           throw erreurFournisseur(erreur)
         }
@@ -693,9 +544,12 @@ export function createAnthropicTextAnalysisProvider(
         lot = await lots.create({
           requests: requests.map((request, index) => ({
             custom_id: `r${index}`,
-            params: construireParams(reglages, [
-              { role: 'user', content: composerMessage(request) },
-            ]),
+            params: construireParams(
+              reglages,
+              [{ role: 'user', content: composerMessage(request) }],
+              INVITE_SYSTEME,
+              SCHEMA_ANALYSE,
+            ),
           })),
         })
       } catch (erreur) {

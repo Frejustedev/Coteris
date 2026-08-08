@@ -10,6 +10,7 @@ export * from './analysis'
 export * from './providers'
 export * from './cost'
 export * from './estimate'
+export * from './rubric-draft'
 export {
   createMockOcrProvider,
   createMockTextAnalysisProvider,

@@ -8,6 +8,7 @@
  */
 
 import type { AnalysisResult } from './analysis'
+import type { BarèmeProposé, RubricDraftRequest } from './rubric-draft'
 
 /** Image d'une zone de réponse recadrée. Jamais une page entière. */
 export interface RegionImage {
@@ -109,6 +110,20 @@ export function supportsBatch(
   provider: TextAnalysisProvider,
 ): provider is BatchTextAnalysisProvider {
   return typeof (provider as Partial<BatchTextAnalysisProvider>).analyzeBatch === 'function'
+}
+
+/**
+ * Proposition d'un découpage de barème à partir d'un corrigé rédigé.
+ *
+ * Distinct de l'analyse : celle-ci juge une copie contre un barème existant,
+ * celui-là aide à écrire le barème. Aucune de ses propositions ne corrige quoi
+ * que ce soit tant qu'un enseignant ne l'a pas acceptée — « aucune correction
+ * sans barème validé » n'admet pas d'exception pour un barème que le modèle
+ * aurait rédigé lui-même.
+ */
+export interface RubricDraftProvider {
+  readonly name: string
+  proposeRubric(request: RubricDraftRequest): Promise<ProviderResponse<BarèmeProposé>>
 }
 
 /** Analyse multimodale, directement sur l'image de la zone — pipeline B. */

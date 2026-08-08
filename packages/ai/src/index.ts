@@ -26,3 +26,11 @@ export {
   type DiagnosticAnalyse,
 } from './anthropic/index'
 export { VERSION_INVITE } from './anthropic/prompt'
+export {
+  createAnthropicRubricDraftProvider,
+  MODELE_BAREME_PAR_DEFAUT,
+  type AnthropicRubricOptions,
+  type DiagnosticBarème,
+} from './anthropic/rubric'
+export { VERSION_INVITE_BAREME } from './anthropic/rubric-prompt'
+export { createMockRubricDraftProvider, type MockRubricOptions } from './mock/rubric'
